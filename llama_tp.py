@@ -15,12 +15,7 @@ from torch.distributed.tensor.parallel import (
     PrepareModuleInput,
     SequenceParallel
 )
-
-"""
-This script demonstrates how to perform Tensor Parallelism (TP) on a Llama2 model
-without Data Parallelism (DP). We set up a single device mesh for TP and
-execute a single forward pass.
-"""
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def main():
     tp_size = 2  # Adjust this value based on the number of GPUs you want to use for TP
@@ -36,12 +31,16 @@ def main():
     # Ensure the world size matches the TP size
     assert world_size == tp_size, f"World size {world_size} must be equal to TP size {tp_size}"
 
-    # Create a device mesh with only the tensor parallel dimension
-    device_mesh = init_device_mesh("cuda", (tp_size,), mesh_dim_names=("tp",))
+    # Set the CUDA device for this process
+    torch.cuda.set_device(rank % torch.cuda.device_count())
+    device = torch.device(f"cuda:{torch.cuda.current_device()}")
 
-    # Create the model and move it to GPU
-    simple_llama2_config = ModelArgs(dim=256, n_layers=2, n_heads=16, vocab_size=32000)
-    model = Transformer.from_model_args(simple_llama2_config).to("cuda")
+    # Create a device mesh with only the tensor parallel dimension
+    device_mesh = init_device_mesh(device.type, (tp_size,), mesh_dim_names=("tp",))
+
+    # Create the model and move it to the correct GPU
+    simple_llama2_config = ModelArgs(dim=256, n_layers=4, n_heads=16, vocab_size=32000)
+    model = Transformer.from_model_args(simple_llama2_config).to(device)
 
     # Initialize model weights
     model.init_weights()
@@ -99,10 +98,15 @@ def main():
 
     # Generate input and perform a single forward pass
     torch.manual_seed(0)
-    inp = torch.randint(32000, (8, 256), device="cuda")  # Input shape: [sequence_length, batch_size]
+    inp = torch.randint(32000, (2048, 16), device=device)  # Input shape: [sequence_length, batch_size]
+    _rank = device_mesh.get_rank()
 
-    output = model(inp)
-    print(f"Rank {rank} forward pass completed. Output shape: {output.shape}")
+    with torch.no_grad():
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            output = model(inp)
+            print(f"Rank {rank} forward pass completed. Output shape: {output.shape}")
+        
+        prof.export_chrome_trace(f"llama_trace_4layers{_rank}.json")
 
     # Clean up
     dist.destroy_process_group()
