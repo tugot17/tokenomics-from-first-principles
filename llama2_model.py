@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.autograd.profiler import record_function
 
 
 @dataclass
@@ -203,29 +204,27 @@ class Attention(nn.Module):
             torch.Tensor: Output tensor after attention.
 
         """
-        bsz, seqlen, _ = x.shape
-        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        with record_function('Attention_Forward'):
+            bsz, seqlen, _ = x.shape
+            xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
-        xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
-        xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-        xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
+            xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
+            xk = xk.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
+            xv = xv.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+            xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-        keys = repeat_kv(xk, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
-        values = repeat_kv(xv, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
+            keys = repeat_kv(xk, self.n_rep)
+            values = repeat_kv(xv, self.n_rep)
 
-        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xk = keys.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xv = values.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+            xq = xq.transpose(1, 2)
+            xk = keys.transpose(1, 2)
+            xv = values.transpose(1, 2)
 
-        # we use casual mask for training
-        output = F.scaled_dot_product_attention(xq, xk, xv, is_causal=True)
-        output = output.transpose(
-            1, 2
-        ).contiguous()  # (bs, seqlen, n_local_heads, head_dim)
-        output = output.view(bsz, seqlen, -1)
-        return self.wo(output)
+            output = F.scaled_dot_product_attention(xq, xk, xv, is_causal=True)
+            output = output.transpose(1, 2).contiguous()
+            output = output.view(bsz, seqlen, -1)
+            return self.wo(output)
 
 
 class FeedForward(nn.Module):
@@ -264,7 +263,8 @@ class FeedForward(nn.Module):
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        with record_function('FeedForward_Forward'):
+            return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
     def init_weights(self, init_std: float):
         nn.init.trunc_normal_(self.w1.weight, mean=0.0, std=0.02)
@@ -334,8 +334,10 @@ class TransformerBlock(nn.Module):
             torch.Tensor: Output tensor after applying attention and feedforward layers.
 
         """
-        h = x + self.attention(self.attention_norm(x), freqs_cis)
-        out = h + self.feed_forward(self.ffn_norm(h))
+        with record_function('Attention'):
+            h = x + self.attention(self.attention_norm(x), freqs_cis)
+        with record_function('FeedForward'):
+            out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
     def init_weights(self):
@@ -437,15 +439,20 @@ class Transformer(nn.Module):
 
         """
         _bsz, seqlen = tokens.shape
-        h = self.tok_embeddings(tokens)
+        with record_function('Embedding'):
+            h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[0:seqlen]
 
-        for layer in self.layers:
-            h = layer(h, freqs_cis)
-        h = self.norm(h)
-        output = self.output(h).float()
+        for i, layer in enumerate(self.layers):
+            with record_function(f'TransformerLayer_{i}'):
+                h = layer(h, freqs_cis)
+        with record_function('Normalization'):
+            h = self.norm(h)
+        with record_function('OutputProjection'):
+            output = self.output(h).float()
         return output
+
 
     @classmethod
     def from_model_args(cls, model_args: ModelArgs) -> "Transformer":
