@@ -17,7 +17,17 @@ from torch.distributed.tensor.parallel import (
 )
 from torch.profiler import profile, record_function, ProfilerActivity
 
+N_LAYERS = 3
+
 def main():
+    prof = torch.profiler.profile(
+    activities=[
+        torch.profiler.ProfilerActivity.CPU, 
+        torch.profiler.ProfilerActivity.CUDA],
+    record_shapes=True,
+    profile_memory=True,
+    with_stack=True)
+    prof.start()
     tp_size = 2  # Adjust this value based on the number of GPUs you want to use for TP
 
     # Initialize the distributed process group
@@ -39,7 +49,7 @@ def main():
     device_mesh = init_device_mesh(device.type, (tp_size,), mesh_dim_names=("tp",))
 
     # Create the model and move it to the correct GPU
-    simple_llama2_config = ModelArgs(dim=256, n_layers=4, n_heads=16, vocab_size=32000)
+    simple_llama2_config = ModelArgs(dim=256, n_layers=N_LAYERS, n_heads=16, vocab_size=32000)
     model = Transformer.from_model_args(simple_llama2_config).to(device)
 
     # Initialize model weights
@@ -108,6 +118,7 @@ def main():
         
         prof.export_chrome_trace(f"llama_trace_4layers{_rank}.json")
 
+    prof.export_chrome_trace(f"llama_trace_{N_LAYERS}layers_take3_rank{_rank}.json")
     # Clean up
     dist.destroy_process_group()
 
