@@ -1,3 +1,5 @@
+#torchrun --nproc_per_node=2 tensor_parallel_example_toy.py 
+
 import os
 import sys
 import torch
@@ -131,26 +133,3 @@ prof.export_chrome_trace(f"trace{_rank}.json")
 print("Trace exported")
 
     
-
-# # Perform a num of iterations of forward/backward
-# # and optimizations for the sharded module.
-# num_iters = 10
-# rank_log(_rank, logger, "Tensor Parallel training starting...")
-# loss_fn = nn.CrossEntropyLoss()
-
-# for i in range(num_iters):
-#     # For TP, input needs to be same across all TP ranks.
-#     # Setting the random seed is to mimic the behavior of dataloader.
-#     torch.manual_seed(i)
-#     inp = torch.rand(20, 10, device="cuda")
-#     real_output = torch.rand(20, 5, device="cuda")
-#     output = tp_model(inp)
-#     intermediate_val = output.sum()
-#     print(f"output.sum() is on device {intermediate_val.device}")
-#     loss = loss_fn(real_output, output)
-#     loss.backward()
-#     print(f"Loss: {loss}")
-#     optimizer.step()
-#     rank_log(_rank, logger, f"Tensor Parallel iter {i} completed")
-
-# rank_log(_rank, logger, "Tensor Parallel training completed!")
