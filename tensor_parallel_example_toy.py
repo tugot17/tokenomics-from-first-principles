@@ -13,6 +13,7 @@ from torch.distributed.tensor.parallel import (
 
 from log_utils import rank_log, get_logger, verify_min_gpu_count
 from torch.profiler import profile, record_function, ProfilerActivity
+logger = get_logger()
 
 # ---- GPU check ------------
 _min_gpu_count = 2

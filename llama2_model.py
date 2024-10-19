@@ -268,15 +268,8 @@ class FeedForward(nn.Module):
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
 
     def forward(self, x):
+        logger.info(x.shape)
         with record_function('FeedForward_Forward'):
-            with record_function("wtf2"):
-                c=1
-                d=2
-                c+d
-            with record_function("wtf"):
-                a = torch.zeros(100, device=x.device)
-                b = torch.ones(100, device=x.device)
-                a + b
             with record_function("w1"):
                 w1_o = self.w1(x)
             with record_function("w3"):
