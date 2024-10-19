@@ -9,6 +9,10 @@ import torch.nn.functional as F
 from torch import nn
 from torch.autograd.profiler import record_function
 
+from log_utils import get_logger
+
+logger = get_logger()
+
 
 @dataclass
 class ModelArgs:
@@ -222,6 +226,7 @@ class Attention(nn.Module):
             xv = values.transpose(1, 2)
 
             output = F.scaled_dot_product_attention(xq, xk, xv, is_causal=True)
+            
             output = output.transpose(1, 2).contiguous()
             output = output.view(bsz, seqlen, -1)
             return self.wo(output)
@@ -264,7 +269,24 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         with record_function('FeedForward_Forward'):
-            return self.w2(F.silu(self.w1(x)) * self.w3(x))
+            with record_function("wtf2"):
+                c=1
+                d=2
+                c+d
+            with record_function("wtf"):
+                a = torch.zeros(100, device=x.device)
+                b = torch.ones(100, device=x.device)
+                a + b
+            with record_function("w1"):
+                w1_o = self.w1(x)
+            with record_function("w3"):
+                w3_o = self.w3(x)
+            with record_function("silu"):
+                x = F.silu(w1_o)
+            with record_function("mul"):
+                x * w3_o
+            with record_function("w2"):
+                return self.w2(x)
 
     def init_weights(self, init_std: float):
         nn.init.trunc_normal_(self.w1.weight, mean=0.0, std=0.02)
@@ -336,8 +358,12 @@ class TransformerBlock(nn.Module):
         """
         with record_function('Attention'):
             h = x + self.attention(self.attention_norm(x), freqs_cis)
+        with record_function('Norm'):
+            normed = self.ffn_norm(h)
         with record_function('FeedForward'):
-            out = h + self.feed_forward(self.ffn_norm(h))
+            h2 = self.feed_forward(normed)
+        with record_function('Sum'):
+            out = h + h2
         return out
 
     def init_weights(self):
@@ -447,6 +473,7 @@ class Transformer(nn.Module):
         for i, layer in enumerate(self.layers):
             with record_function(f'TransformerLayer_{i}'):
                 h = layer(h, freqs_cis)
+
         with record_function('Normalization'):
             h = self.norm(h)
         with record_function('OutputProjection'):

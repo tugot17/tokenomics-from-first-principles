@@ -57,8 +57,9 @@ class ToyModel(nn.Module):
         self.out_proj = nn.Linear(hidden_size, 5)
 
     def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
+        for idx, layer in enumerate(self.layers):
+            with record_function(f"layer_{idx}"):
+                x = layer(x)
         x = self.out_proj(x)
         return x
 
@@ -122,6 +123,8 @@ tp_model = parallelize_module(
     device_mesh=device_mesh,
     parallelize_plan=parallelize_plan,
 )
+
+print(tp_model)
 
 # Run a forward pass and export profiling trace
 with torch.no_grad():

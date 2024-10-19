@@ -39,7 +39,8 @@ def main():
     device_mesh = init_device_mesh(device.type, (tp_size,), mesh_dim_names=("tp",))
 
     # Create the model and move it to the correct GPU
-    simple_llama2_config = ModelArgs(dim=256, n_layers=4, n_heads=16, vocab_size=32000)
+    DIM = int(1024)
+    simple_llama2_config = ModelArgs(dim=DIM, n_layers=4, n_heads=16, vocab_size=100)
     model = Transformer.from_model_args(simple_llama2_config).to(device)
 
     # Initialize model weights
@@ -101,13 +102,23 @@ def main():
     inp = torch.randint(32000, (2048, 16), device=device)  # Input shape: [sequence_length, batch_size]
     _rank = device_mesh.get_rank()
 
+    # warmups = 10
+    # for _ in range(warmups):
+    #     with torch.no_grad():
+    #         output = model(inp)
+
     with torch.no_grad():
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=False) as prof:
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=False, record_shapes=True) as prof:
             with record_function('Model_Forward'):
                 output = model(inp)
             print(f"Rank {rank} forward pass completed. Output shape: {output.shape}")
         
-        prof.export_chrome_trace(f"llama_trace_4layers{_rank}.json")
+        import os
+        try: 
+            os.remove(f"llama_trace_4layers{_rank}_dim_{DIM}.json")
+        except Exception:
+            print("No file to delete")
+        prof.export_chrome_trace(f"llama_trace_4layers{_rank}_dim_{DIM}.json")
 
     # Clean up
     dist.destroy_process_group()
