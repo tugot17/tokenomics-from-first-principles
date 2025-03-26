@@ -174,8 +174,8 @@ class TokenomicsModel:
         # Current sequence length starts at prompt length
         current_sequence_length = sequence_length
         
-        # For each token to generate
-        for _ in range(generated_tokens):
+        # For each token to generate - ensure generated_tokens is an integer
+        for _ in range(int(generated_tokens)):
             # Get the time breakdown for this token
             breakdown = self.decode_time_breakdown(current_sequence_length, batch_size)
             

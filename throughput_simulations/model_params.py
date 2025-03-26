@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class ModelParams:
     """Parameters for a transformer-based LLM"""
-    name: str = "LLama 3.3 70B"
+    name: str = "llama-3-3-70b"
     hidden_size: int = 8192
     num_hidden_layers: int = 80
     num_attention_heads: int = 64
@@ -13,6 +13,22 @@ class ModelParams:
     dtype_bytes: int = 2  # bfloat16 = 2 bytes
     
     def __post_init__(self):
+        # If using preset models, update parameters accordingly
+        if self.name.lower() == "llama-3-1-8b":
+            self.hidden_size = 4096
+            self.num_hidden_layers = 32
+            self.num_attention_heads = 32
+            self.num_key_value_heads = 8
+            self.intermediate_size = 14336
+            self.vocab_size = 128256
+        elif self.name.lower() == "llama-3-3-70b":
+            self.hidden_size = 8192
+            self.num_hidden_layers = 80
+            self.num_attention_heads = 64
+            self.num_key_value_heads = 8
+            self.intermediate_size = 28672
+            self.vocab_size = 128256
+            
         # Calculate derived values
         self.head_size = self.hidden_size // self.num_attention_heads
         
