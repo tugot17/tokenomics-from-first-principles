@@ -10,7 +10,7 @@ The primary cost behind a generated token boils down to the cost of compute—yo
 
 As a basis for our inference economics analysis, we will use [LLama 3.3 70B](https://github.com/meta-llama/llama-models/blob/main/models/llama3_3/MODEL_CARD.md). As of the writing of this article, this is the best open-source model released by Meta and a model architecture around which [a big portion of the industry standardized](https://huggingface.co/models?other=llama). There are numerous model fine-tunes of the Llama weights, and while these models will produce different outputs, because they share the same model architecture, they require exactly the same compute resources to run them. Hence, we consider Llama a good candidate to provide a real-world example that will be representative but, at the same time, quite simple to grasp.
 
-LLMs store their "knowledge" in parameters—essentially the weights that define the model's behavior. These parameters require memory to store and compute resources  to process. Generally, the more parameters a model has, the greater its resource demands, but so are its potential capability on downstream tasks. LLaMA 3.3 70B has around 70 billion parameters, which is where its name comes from.
+LLMs store their "knowledge" in parameters—essentially the weights that define the model's behavior. These parameters require memory to store and compute resources  to process. Generally, the more parameters a model has, the greater its resource demands, but so are its potential capability on downstream tasks. Llama 3.3 70B has around 70 billion parameters, which is where its name comes from.
 
 A so called decoder-only transformer model, like Llama, usually consists of the following components:
 
@@ -94,7 +94,7 @@ $$
 \text{2 $\times$ RMS norm} = 2 \times \text{hidden\_size} \text{ parameters}
 $$
 
-$*$ The $\text{w\_v}$ and $\text{w\_k}$  being $\frac{1}{8}$th size of the $\text{w\_q}$ is something LLaMA architecture specific. This is due to the LLaMA team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a LLaMA architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
+$*$ The $\text{w\_v}$ and $\text{w\_k}$  being $\frac{1}{8}$th size of the $\text{w\_q}$ is something Llama architecture specific. This is due to the Llama team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a Llama architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
 
 Bringing us to a total of
 
@@ -383,7 +383,7 @@ FLOPs: `2 x S x hidden_size x vocab_size = 2 S hidden_size vocab_size`
 
 ## Total FLOPs in a Llama model
 
-Total FLOPs in the LLaMA model is a product of the number of FLOPs per transformer block times the number of blocks, plus the FLOPs for the LM head.
+Total FLOPs in the Llama model is a product of the number of FLOPs per transformer block times the number of blocks, plus the FLOPs for the LM head.
 
 Transformer block:
 
@@ -507,10 +507,11 @@ Fig. 11: KV cache scaling with the increasing sequence length. At 128k tokens fo
 
 # Multi GPU inference
 
-As you might have noted, the 141 GB we need to store the LLaMA 3.3 70B parameters is more than what we have available on a single Nvidia H100 GPU. H100s come with 80GB of HBM memory. We would need a minimum of two to store the model in memory; however in practice we would like to probably use more. If we have more memory available we will be able to allocate higher proportion of it to KV cache and smaller proportion to the model weights allowing us to run larger batches. We would also linearly increase the available memory bandwidth, at the cost of an increased overhead in cross GPU communication though.
+As you might have noted, the 141 GB we need to store the Llama 3.3 70B parameters is more than what we have available on a single Nvidia H100 GPU. H100s come with 80GB of HBM memory. We would need a minimum of two to store the model in memory; however in practice we would like to probably use more. If we have more memory available we will be able to allocate higher proportion of it to KV cache and smaller proportion to the model weights allowing us to run larger batches. We would also linearly increase the available memory bandwidth, at the cost of an increased overhead in cross GPU communication though.
 
-Using just two GPUs for LLaMA 3.3 70B would result in “wasting” majority of memory (`141/160=88%`) on model weights leaving only `160-141=19GB` for KV cache. We wouldn’t be able to run large batches nor long sequence lengths. We touch on this in later section, but being able to run larger batches is the key to enjoying the good inference economics.
+Using just two GPUs for Llama 3.3 70B would result in only having a tiny amount of memory left for KV cache because the model weights already take up 88% (`141/160=88%`) of that memory, leaving only 19GB of memory (`160-141=19GB`) available for KV cache (in practice even less than that because we can't use 100% of GPU memory but are limited to around 95%). We wouldn’t be able to run large batches nor long sequence lengths, this would be very inefficient. We touch on this in later section, but being able to run larger batches is the key to enjoying the good inference economics.
 
+Server GPUs almost always come in deployments of 4 or 8 GPUs per node, so using 3 GPUs would be wasteful because that would lead to one GPU being entirely unused in a lot of circumstances. Hence we jump from 2 to 4 GPUs for a singel model instance right away.
 Let’s assume then we will run the Llama 3.3 70B on 4 H100s. There are two main ways to run the large-scale AI models on multiple GPUs:
 
 - Pipeline parallel
@@ -641,7 +642,7 @@ Increasing the batch size increases the compute usage linearly—we have `k` tim
 
 *One thing to note is that there is a limit to this model. As we approach really long sequences or really big batches, as we will see in our experiments, the memory footprint of the KV cache starts to slowly overtake the memory footprint of the model itself (see Fig. 15). When this happens, the cost of loading the model will become increasingly irrelevant to the total time of loading data from the global memory.
 
-"Luckily" for us, this situation also has its limit—the memory limit of a GPU node; in the case of H100s, it will be 8 × H100 = 8 × 80GB = 640GB. Note how for a batch of 8 at the full context length of LLaMA we are already nearly there.
+"Luckily" for us, this situation also has its limit—the memory limit of a GPU node; in the case of H100s, it will be 8 × H100 = 8 × 80GB = 640GB. Note how for a batch of 8 at the full context length of Llama we are already nearly there.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%209.png)
 
@@ -652,7 +653,7 @@ Fig. 15: KV cache scaling - comparison between different batch sizes. Note how t
 After all of the theoretical introductions, let’s try to combine all of that we learned so far to estimate the LLM throughput. We will:
 
 - Develop a simplified throughput model based on the GPU specification.
-- Compare it with a real-world throughput of LLaMA 3.3 70B on 4 H100s.
+- Compare it with a real-world throughput of Llama 3.3 70B on 4 H100s.
 - Explain the discrepancies between theoretical and actual performance
 
 The time to produce a response to a prompt is a combination of the pre-fill time and the decode time. The more output tokens we produce, the smaller will be the time spent in the prefill phase. The prefill time is primarily compute bound, and the time for token-by-token is primarily memory bound.
