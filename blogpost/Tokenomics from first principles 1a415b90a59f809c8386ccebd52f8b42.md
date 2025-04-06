@@ -128,7 +128,7 @@ $$
 
 Each parameter is a floating-point number in a bfloat16 format—e.g., 0.22312, -4.3131. Storing each of these numbers takes 16 bits which is  2 bytes of memory. Given that we have a total of  `70,553,706,496` parameters to store, we will need `141,107,412,992` bytes or `141GB` just to store the model weights in GPU memory.
 
-Note that 141GB is more memory than there is on the Nvidia A100 or H100. These GPUs come with only 80GB of total memory (HBM memory). Hence, for serving models, we will need at least two of these cards. In practice, for more optimal model serving, we want to use more, 4 or even 8 such GPUs. Let’s now just take it at face value, and we will elaborate on why this is the case in the later part of this text.
+Note that 141GB is more memory than there is on the Nvidia A100 or H100. One of these GPUs comes with only 80GB of total memory (we refer to this memory as HBM, high bandwidth memory or global memory). Hence, for serving models, we usually use multiple cards for a single instance of a model. In practice, for more optimal model serving, we want to use more, 4 or even 8 such GPUs. Let’s now just take it at face value, and we will elaborate on why this is the case in the later part of this text.
 
 ## Compute and memory bound
 
@@ -625,8 +625,8 @@ The total overhead of 8 or 9µs would be awesome. However, in practice, this get
 - kernel launch overhead
 - Suboptimal memory access patterns
 - NCCL overhead
-- **Memory management overhead—a**dditional memory allocations and copies required for tensor parallelism.
-- and others I’m not aware of
+- **Memory management overhead**—additional memory allocations and copies required for tensor parallelism.
+- miscellaneous
 
 These factors make accurate overhead modeling extremely challenging. As we'll demonstrate in the next sections, the gap between theoretical and actual performance can be substantial, requiring empirical measurement for accurate system modeling.
 
