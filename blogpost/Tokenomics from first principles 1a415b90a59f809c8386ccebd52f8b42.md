@@ -288,20 +288,25 @@ $$
 $$
 
 
-### Q @ Kᵗ (Per head)
+## Q × K^T
 
-We assume the naive attention implementation. In practice, with things like flash attention, where to save memory we calculate it iteratively.
+*We assume the naive attention implementation. In practice, with algorithms like flash attention, we calculate it iteratively to save memory.*
 
-- **Q shape**: (S, head_dim)
-- **Kᵗ shape**: (head_dim, S)
+#### Shapes
+- Q shape: $(S, \text{head\_dim})$
+- K^T shape: $(\text{head\_dim}, S)$
 
-For each head:
+#### FLOPS
 
-FLOPs: `2 x S x head_dim x S = 2 S² head_dim`
+For each attention head:
 
-For all heads:
+$$\text{FLOPS per head} = 2 \times S \times \text{head\_dim} \times S = 2S^2 \times \text{head\_dim}$$
 
-FLOPs: `2 S² head_dim x num_attention_heads = 2 S² hidden_size`
+For all attention heads:
+
+$$\text{FLOPS total} = 2S^2 \times \text{head\_dim} \times \text{num\_attention\_heads} = 2S^2 \times \text{hidden\_size}$$
+
+*Note: This quadratic dependence on sequence length ($S^2$) is why attention becomes expensive for long sequences.*
 
 ### Softmax  (per attention head)
 
