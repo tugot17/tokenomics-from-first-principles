@@ -254,7 +254,7 @@ $$
 \end{aligned}
 $$
 
-### Positional Embedding (RoPE)
+## Rotary Positional Embedding (RoPE)
 
 ```python
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -264,22 +264,29 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
 ```
+*Fig. 6: RoPE implementation*
 
-Fig. 6: RoPE implementation
-
-For each element in **q** and **k**, the following operations are performed (See Fig. 6):
+For each element in $\mathbf{q}$ and $\mathbf{k}$, the following operations are performed:
 
 - **Multiplications**: 2 per tensor
-  - Multiply **q** with **cos**.
-  - Multiply the rotated version of **q** (`rotate_half(q)`) with **sin**.
+  - Multiply $\mathbf{q}$ with $\mathbf{cos}$
+  - Multiply the rotated version of $\mathbf{q}$ ($\text{rotate\_half}(\mathbf{q})$) with $\mathbf{sin}$
 - **Additions**: 1 per tensor
-  - Add the two results to get the embedded **q**.
+  - Add the two results to get the embedded $\mathbf{q}$
 
-Since these operations are performed on both **q** and **k**, the total per element is:
+Since these operations are performed on both $\mathbf{q}$ and $\mathbf{k}$, the total per element is:
 
-- **Total operations per element**: 3 FLOPs per tensor × 2 tensors = **6 FLOPs**
+- **Total operations per element**: 3 FLOPs per tensor $\times$ 2 tensors = **6 FLOPs**
 
-FLOPs: `S x head_dim x num_attention_heads x 6 = S x hidden_size x 6`
+#### FLOPS
+
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{RoPE}} &= S \times \text{head\_dim} \times \text{num\_attention\_heads} \times 6 \\
+&= S \times \text{hidden\_size} \times 6
+\end{aligned}
+$$
+
 
 ### Q @ Kᵗ (Per head)
 
