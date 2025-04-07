@@ -499,7 +499,6 @@ In the attention mechanism, we calculate attention relationships between all tok
 This optimization works elegantly with matrix operations:
 
 ### During Pre-fill (S tokens):
-
 $$
 \begin{align}
 \mathbf{Q} &\in \mathbb{R}^{S \times d} \\
@@ -507,22 +506,18 @@ $$
 \mathbf{V} &\in \mathbb{R}^{S \times d} \\
 \end{align}
 $$
-
 Where $d$ is the hidden dimension.
 
 ### The attention scores and outputs are computed as:
-
-$$
+$
 \begin{align}
 \text{Score Matrix} &= \mathbf{Q} \cdot \mathbf{K}^T \in \mathbb{R}^{S \times S} \\
 \text{Attention Output} &= \text{softmax}(\text{Score Matrix}) \cdot \mathbf{V} \in \mathbb{R}^{S \times d}
 \end{align}
-$$
+$
 
 ### During Token-by-Token Generation (token S+1):
-
 For generating the next token, we only need to compute:
-
 $$
 \begin{align}
 \mathbf{Q}_{new} &\in \mathbb{R}^{1 \times d} \text{ [Only for the new token]} \\
@@ -536,7 +531,6 @@ $$
 $$
 
 The new attention calculation becomes:
-
 $$
 \begin{align}
 \text{Score Vector} &= \mathbf{Q}_{new} \cdot \mathbf{K}^T_{full} \in \mathbb{R}^{1 \times (S+1)} \\
