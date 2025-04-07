@@ -94,7 +94,7 @@ $$
 \text{2 $\times$ RMS norm} = 2 \times \text{hidden\_size} \text{ parameters}
 $$
 
-$*$ The $\text{w\_v}$ and $\text{w\_k}$  being $\frac{1}{8}$th size of the $\text{w\_q}$ is something Llama architecture specific. This is due to the Llama team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a Llama architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
+$*$ The $\text{w\_v}$ and $\text{w\_k}$  being $\frac{1}{8}th$ size of the $\text{w\_q}$ is something Llama architecture specific. This is due to the Llama team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a Llama architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
 
 Bringing us to a total of
 
@@ -308,51 +308,63 @@ $$\text{FLOPS total} = 2S^2 \times \text{head\_dim} \times \text{num\_attention\
 
 *Note: This quadratic dependence on sequence length ($S^2$) is why attention becomes expensive for long sequences.*
 
-### Softmax  (per attention head)
+## Softmax
 
-It is kind of hard to estimate the FLOPs here. We approximate softmax as 5 FLOPs per element:
+*It is kind of hard to estimate the FLOPs for Softmax. We approximate softmax as 5 FLOPs per element:*
 
-**Input shape**: (S, S)
+#### Shapes
+- Input shape: $(S, S)$
 
-**FLOPs** = `5 x S x S x num_attention heads = 5 S² num_attention_heads`
+#### FLOPS
 
-### Attention Output (Q @ Kᵗ) @ V (Per head)
+$$ \text{FLOPS}_{\text{softmax}} = 5 \times S \times S \times \text{num\_attention\_heads} = 5S^2 \times \text{num\_attention\_heads} $$
 
-- **Input shape**: (S, S)
-- **V matrix shape: (S, head_size)**
+*This is a simplified approximation of the actual operations in softmax (exponentiation, sum, division).*
+
+## Attention Output $(Q @ K^T) @ V$ 
+
+#### Shapes
+- Input shape (attention scores): $(S, S)$
+- V matrix shape: $(S, \text{head\_size})$
+
+#### FLOPS
 
 For each head:
+$$\text{FLOPS}_{\text{attn output per head}} = 2 \times S \times S \times \text{head\_size} = 2S^2 \times \text{head\_size}$$
 
-FLOPs: `2 x S x S x head_size=2S²head_size`
+For all heads:
+$$\text{FLOPS}_{\text{attn output total}} = 2S^2 \times \text{head\_size} \times \text{num\_attention\_heads} = 2S^2 \times \text{hidden\_size}$$
 
-For all heads: `2S²head_size x num_attention_heads = 2 S² hidden_size`
+## O-Projection
 
-### O-Projection
+#### Shapes
+- Input shape: $(S, \text{hidden\_size})$
+- $W_o$ matrix: $(\text{hidden\_size}, \text{hidden\_size})$
 
-- **Input shape**: (S, hidden_size)
-- Wo matrix: (hidden_size, hidden_size)
+#### FLOPS
 
-FLOPs: `2 x S x hidden_size x hidden_size = 2 S hidden_size²`
+$$\text{FLOPS}_{\text{O-projection}} = 2 \times S \times \text{hidden\_size} \times \text{hidden\_size} = 2S \times \text{hidden\_size}^2$$
 
-### Total FLOPs Self Attention
 
-**RMS Norm:** `4S × hidden_size`
+## Total FLOPs for Self-Attention
 
-**Query projection:** `2S × hidden_size²`
+**RMS Norm:** $4S \times \text{hidden\_size}$
 
-**Keys and values projections:** `0.5S × hidden_size²`
+**Query projection:** $2S \times \text{hidden\_size}^2$
 
-**Positional Embedding (RoPE)**: `6S × hidden_size`
+**Keys and values projections:** $0.5S \times \text{hidden\_size}^2$
 
-**Q @ Kᵗ** (across all heads): `2 S² hidden_size`
+**Positional Embedding (RoPE)**: $6S \times \text{hidden\_size}$
 
-**Softmax** (across all heads): `5S² × num_attention_heads`
+**Q @ K^T** (across all heads): $2S^2 \times \text{hidden\_size}$
 
-**Attention Output (Q @ Kᵗ) @ V**: `2S² × hidden_size`
+**Softmax** (across all heads): $5S^2 \times \text{num\_attention\_heads}$
 
-**O-Projection**: `2S × hidden_size²`
+**Attention Output (Q @ K^T) @ V**: $2S^2 \times \text{hidden\_size}$
 
-Total FLOPs = `10S × hidden_size + 4.5S × hidden_size² + 4S² × hidden_size + 5S² × num_attention_heads`
+**O-Projection**: $2S \times \text{hidden\_size}^2$
+
+**Total FLOPs** = $10S \times \text{hidden\_size} + 4.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}$
 
 ## MLP
 
