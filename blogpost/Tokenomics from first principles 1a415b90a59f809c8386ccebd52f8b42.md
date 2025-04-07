@@ -374,7 +374,7 @@ $$\text{FLOPS}_{\text{O-projection}} = 2 \times S \times \text{hidden\_size} \ti
 
 **Total FLOPs** = $10S \times \text{hidden\_size} + 4.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}$
 
-## MLP
+## MLP (Per Layer)
 
 ```python
 class SwiGLU(nn.Module):
@@ -383,76 +383,115 @@ class SwiGLU(nn.Module):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 ```
 
-*Fig. 7: Simplified SwiGLU implementation*
-
 ### Gate W1
 
-#### Shapes
-- Input shape: $(S, \text{hidden\_size})$
-- W1 weight matrix shape: $(\text{hidden\_size}, \text{intermediate\_size}) = (\text{hidden\_size}, 3.5 \times \text{hidden\_size})$*
+#### Shapes: 
+- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Weight: $\mathbf{W}_1 \in \mathbb{R}^{\text{hidden\_size} \times \text{intermediate\_size}}$ 
+- Where $\text{intermediate\_size} = 3.5 \times \text{hidden\_size}$ (Llama specific)
 
-*Note: The `intermediate_size` being 3.5x of hidden size is Llama architecture specific*
+#### FLOPS:
 
-#### FLOPS
-$\text{FLOPS}_{\text{Gate W1}} = 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Gate W1}} &= 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size}\\
+&= 7S \times \text{hidden\_size}^2
+\end{aligned}
+$$
 
 ### Up W2
 
-#### Shapes
-- Input shape: $(S, \text{hidden\_size})$
-- W2 weight matrix shape: $(\text{hidden\_size}, \text{intermediate\_size}) = (\text{hidden\_size}, 3.5 \times \text{hidden\_size})$*
+#### Shapes:
+- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Weight: $\mathbf{W}_2 \in \mathbb{R}^{\text{hidden\_size} \times \text{intermediate\_size}}$
+  - Where $\text{intermediate\_size} = 3.5 \times \text{hidden\_size}$ (Llama specific)
 
-*Note: Llama architecture specific proportion*
+#### FLOPS:
 
-#### FLOPS
-$\text{FLOPS}_{\text{Up W2}} = 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
-
-### Down W3
-
-#### Shapes
-- Input shape: $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$*
-- W3 weight matrix shape: $(\text{intermediate\_size}, \text{hidden\_size}) = (3.5 \times \text{hidden\_size}, \text{hidden\_size})$
-
-*Note: Llama architecture specific proportion*
-
-#### FLOPS
-$\text{FLOPS}_{\text{Down W3}} = 2 \times S \times 3.5 \times \text{hidden\_size} \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Up W2}} &= 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size}\\
+&= 7S \times \text{hidden\_size}^2
+\end{aligned}
+$$
 
 ### Swish/SiLU Activation
 
-#### Shapes
-- Input shape: $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$
+#### Shapes:
+- Input: $\mathbf{X}_{\text{gate}} \in \mathbb{R}^{S \times \text{intermediate\_size}}$
+  - Where $\text{intermediate\_size} = 3.5 \times \text{hidden\_size}$
 
-#### FLOPS
+#### FLOPS:
 *We approximate the activation function as 5 FLOPs per element*
 
-$\text{FLOPS}_{\text{Swish}} = 5 \times S \times \text{intermediate\_size} = 5S \times 3.5 \times \text{hidden\_size} = 17.5S \times \text{hidden\_size}$
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Swish}} &= 5 \times S \times \text{intermediate\_size}\\
+&= 5S \times 3.5 \times \text{hidden\_size}\\
+&= 17.5S \times \text{hidden\_size}
+\end{aligned}
+$$
 
 ### Element-wise Multiplication
 
-#### Shapes
-- Input shape (for both inputs): $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$
+#### Shapes:
+- First Input: $\text{SiLU}(\mathbf{X}_{\text{gate}}) \in \mathbb{R}^{S \times \text{intermediate\_size}}$
+- Second Input: $\mathbf{X}_{\text{up}} \in \mathbb{R}^{S \times \text{intermediate\_size}}$
+- Where $\text{intermediate\_size} = 3.5 \times \text{hidden\_size}$
 
-#### FLOPS
-$\text{FLOPS}_{\text{Element-wise Mult}} = S \times \text{intermediate\_size} = S \times 3.5 \times \text{hidden\_size} = 3.5S \times \text{hidden\_size}$
+#### FLOPS:
+
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Element-wise Mult}} &= S \times \text{intermediate\_size}\\
+&= S \times 3.5 \times \text{hidden\_size}\\
+&= 3.5S \times \text{hidden\_size}
+\end{aligned}
+$$
+
+### Down W3
+
+#### Shapes:
+- Input: $\mathbf{X}_{\text{combined}} \in \mathbb{R}^{S \times \text{intermediate\_size}}$
+  - Where $\text{intermediate\_size} = 3.5 \times \text{hidden\_size}$
+- Weight: $\mathbf{W}_3 \in \mathbb{R}^{\text{intermediate\_size} \times \text{hidden\_size}}$
+
+#### FLOPS:
+
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Down W3}} &= 2 \times S \times \text{intermediate\_size} \times \text{hidden\_size}\\
+&= 2 \times S \times 3.5 \times \text{hidden\_size} \times \text{hidden\_size}\\
+&= 7S \times \text{hidden\_size}^2
+\end{aligned}
+$$
 
 ### Total FLOPS MLP
 
-$$\begin{align}
+$$
+\begin{aligned}
 \text{Total FLOPS}_{\text{MLP}} &= \text{FLOPS}_{\text{Gate W1}} + \text{FLOPS}_{\text{Up W2}} + \text{FLOPS}_{\text{Swish}} + \text{FLOPS}_{\text{Element-wise Mult}} + \text{FLOPS}_{\text{Down W3}}\\
 &= 7S \times \text{hidden\_size}^2 + 7S \times \text{hidden\_size}^2 + 17.5S \times \text{hidden\_size} + 3.5S \times \text{hidden\_size} + 7S \times \text{hidden\_size}^2\\
-&= 21S \times \text{hidden\_size}^2 + 21S \times \text{hidden\_size} \approx 21S \times \text{hidden\_size}^2
-\end{align}$$
+&= 21S \times \text{hidden\_size}^2 + 21S \times \text{hidden\_size}\\
+&\approx 21S \times \text{hidden\_size}^2
+\end{aligned}
+$$
 
 ## LM Head
 
-#### Shapes
-- Input shape: $(S, \text{hidden\_size})$
-- LM head weights shape: $(\text{hidden\_size}, \text{vocab\_size})$
+#### Shapes:
+- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Weight: $\mathbf{W}_{\text{LM}} \in \mathbb{R}^{\text{hidden\_size} \times \text{vocab\_size}}$
+- Output: $\mathbf{Logits} \in \mathbb{R}^{S \times \text{vocab\_size}}$
 
-#### FLOPS
+#### FLOPS:
 
-$$\text{FLOPS}_{\text{LM Head}} = 2 \times S \times \text{hidden\_size} \times \text{vocab\_size} = 2S \times \text{hidden\_size} \times \text{vocab\_size}$$
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{LM Head}} &= 2 \times S \times \text{hidden\_size} \times \text{vocab\_size}\\
+&= 2S \times \text{hidden\_size} \times \text{vocab\_size}
+\end{aligned}
+$$
 
 ## Total FLOPs in a Llama Model
 
