@@ -411,22 +411,61 @@ This shows us that in the pre-fill phase we are much more bound by the available
 
 After the first forward pass, model produces a new token. We append said token at the end of the sequence, and we proceed to generate the next token. As we showed above, this is quite computationally intensive (hundreds of TFLOPs). To optimize the subsequent token generation process, the ML community developed several techniques, most notably KV caching.
 
-In the attention mechanism, we calculate attention relationships between all tokens in the sequence. The key insight is that at step S+1, we've already calculated the attention between all of the first S tokens during the pre-fill phase. We can store these intermediate values in memory (the "cache") and only calculate new attention values involving the most recently generated token
+In the attention mechanism, we calculate attention relationships between all tokens in the sequence. The key insight is that at step $S+1$, we've already calculated the attention between all of the first $S$ tokens during the pre-fill phase. We can store these intermediate values in memory (the "cache") and only calculate new attention values involving the most recently generated token.
 
-This optimization works elegantly with the matrix operations (See Fig. 8):
+This optimization works elegantly with matrix operations:
 
-- During pre-fill (S tokens):
-  - Q: (S, hidden_dim)
-  - K^T: (hidden_dim, S)
-  - V: (S, hidden_dim)
-  - score_matrix = Q @ K^T: (S, S)
-  - score_matrix @ V: (S, hidden_dim)
-- During token-by-token generation (token S+1):
-  - Q: (1, hidden_dim) [Only for the new token]
-  - K^T: (hidden_dim, S+1) [Including the new token]
-  - V: (S+1, hidden_dim) [Including the new token]
-  - score_matrix = Q @ K^T: ((1, hidden_dim) @ (hidden_dim, S+1) → (1, S+1))
-  - score_matrix @ V: ((1, S+1) @ (S+1, hidden_dim) → 1, hidden_dim)
+### During Pre-fill (S tokens):
+
+$$
+\begin{align}
+\mathbf{Q} &\in \mathbb{R}^{S \times d} \\
+\mathbf{K}^T &\in \mathbb{R}^{d \times S} \\
+\mathbf{V} &\in \mathbb{R}^{S \times d} \\
+\end{align}
+$$
+
+Where $d$ is the hidden dimension.
+
+### The attention scores and outputs are computed as:
+
+$$
+\begin{align}
+\text{Score Matrix} &= \mathbf{Q} \cdot \mathbf{K}^T \in \mathbb{R}^{S \times S} \\
+\text{Attention Output} &= \text{softmax}(\text{Score Matrix}) \cdot \mathbf{V} \in \mathbb{R}^{S \times d}
+\end{align}
+$$
+
+### During Token-by-Token Generation (token S+1):
+
+For generating the next token, we only need to compute:
+
+$$
+\begin{align}
+\mathbf{Q}_{new} &\in \mathbb{R}^{1 \times d} \text{ [Only for the new token]} \\
+\mathbf{K}^T_{cache} &\in \mathbb{R}^{d \times S} \text{ [From cache]} \\
+\mathbf{K}^T_{new} &\in \mathbb{R}^{d \times 1} \text{ [For the new token]} \\
+\mathbf{K}^T_{full} &= [\mathbf{K}^T_{cache} \; | \; \mathbf{K}^T_{new}] \in \mathbb{R}^{d \times (S+1)} \\
+\mathbf{V}_{cache} &\in \mathbb{R}^{S \times d} \text{ [From cache]} \\
+\mathbf{V}_{new} &\in \mathbb{R}^{1 \times d} \text{ [For the new token]} \\
+\mathbf{V}_{full} &= \begin{bmatrix} \mathbf{V}_{cache} \\ \mathbf{V}_{new} \end{bmatrix} \in \mathbb{R}^{(S+1) \times d}
+\end{align}
+$$
+
+The new attention calculation becomes:
+
+$$
+\begin{align}
+\text{Score Vector} &= \mathbf{Q}_{new} \cdot \mathbf{K}^T_{full} \in \mathbb{R}^{1 \times (S+1)} \\
+\text{Attention Output} &= \text{softmax}(\text{Score Vector}) \cdot \mathbf{V}_{full} \in \mathbb{R}^{1 \times d}
+\end{align}
+$$
+
+The key efficiency gain comes from:
+1. Reusing $\mathbf{K}^T_{cache}$ and $\mathbf{V}_{cache}$ from previous calculations
+2. Only computing new key-value projections for the latest token
+3. Reducing the attention calculation from $O(S^2)$ to $O(S)$ for each new token
+
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%203.png)
 
