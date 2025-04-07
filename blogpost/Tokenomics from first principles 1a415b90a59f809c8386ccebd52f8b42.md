@@ -370,54 +370,71 @@ $$\text{FLOPS}_{\text{O-projection}} = 2 \times S \times \text{hidden\_size} \ti
 
 ```python
 class SwiGLU(nn.Module):
-		...
+    ...
     def forward(self, x):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 ```
 
-Fig. 7: Simplified SwiGLU implementation
+*Fig. 7: Simplified SwiGLU implementation*
 
 ### Gate W1
 
-- Input shape (S, hidden_size)
-- W1 weight matrix shape: (hidden_size x intermediate_size) = (hidden_size x 3.5 x hidden_size)*
+#### Shapes
+- Input shape: $(S, \text{hidden\_size})$
+- W1 weight matrix shape: $(\text{hidden\_size}, \text{intermediate\_size}) = (\text{hidden\_size}, 3.5 \times \text{hidden\_size})$*
 
-*llama architecture specific proportion;
+*Note: The `intermediate_size` being 3.5x of hidden size is Llama architecture specific*
 
-FLOPS: `2 x S x hidden_size x 3.5 x hidden_size = 7 S hidden_size²`
-
-See Fig. 7 for details
+#### FLOPS
+$\text{FLOPS}_{\text{Gate W1}} = 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
 
 ### Up W2
 
-- Input shape (S, hidden_size)
-- W1 weight matrix shape: (hidden_size x intermediate_size) = (hidden_size x 3.5 x hidden_size)*
+#### Shapes
+- Input shape: $(S, \text{hidden\_size})$
+- W2 weight matrix shape: $(\text{hidden\_size}, \text{intermediate\_size}) = (\text{hidden\_size}, 3.5 \times \text{hidden\_size})$*
 
-*llama architecture specific proportion
+*Note: Llama architecture specific proportion*
 
-FLOPS: `2 x S x hidden_size x 3.5 x hidden_size = 7 S hidden_size²`
+#### FLOPS
+$\text{FLOPS}_{\text{Up W2}} = 2 \times S \times \text{hidden\_size} \times 3.5 \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
 
 ### Down W3
 
-- Input shape (S, intermediate_size) = (S, 3.5 x hidden_size)*
-- W1 weight matrix shape: (intermediate_size, hidden_size)  = (3.5 x hidden_size, hidden_size)
-- llama architecture specific proportion
+#### Shapes
+- Input shape: $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$*
+- W3 weight matrix shape: $(\text{intermediate\_size}, \text{hidden\_size}) = (3.5 \times \text{hidden\_size}, \text{hidden\_size})$
 
-FLOPS: `2 x S x 3.5 x hidden_size x hidden_size = 7 S hidden_size²`
+*Note: Llama architecture specific proportion*
 
-### Swish Activation
+#### FLOPS
+$\text{FLOPS}_{\text{Down W3}} = 2 \times S \times 3.5 \times \text{hidden\_size} \times \text{hidden\_size} = 7S \times \text{hidden\_size}^2$
 
-We approximate the activation function as 5 FLOPs per element
+### Swish/SiLU Activation
 
-- **Input shape:** `(S, intermediate_size)`
+#### Shapes
+- Input shape: $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$
 
-FLOPs: `5 S intermediate_size`
+#### FLOPS
+*We approximate the activation function as 5 FLOPs per element*
+
+$\text{FLOPS}_{\text{Swish}} = 5 \times S \times \text{intermediate\_size} = 5S \times 3.5 \times \text{hidden\_size} = 17.5S \times \text{hidden\_size}$
+
+### Element-wise Multiplication
+
+#### Shapes
+- Input shape (for both inputs): $(S, \text{intermediate\_size}) = (S, 3.5 \times \text{hidden\_size})$
+
+#### FLOPS
+$\text{FLOPS}_{\text{Element-wise Mult}} = S \times \text{intermediate\_size} = S \times 3.5 \times \text{hidden\_size} = 3.5S \times \text{hidden\_size}$
 
 ### Total FLOPS MLP
 
-We combine the FLOPs for W1, W2, and W3. In theory, we should also include the FLOPs in Swish, but they are an order of magnitude smaller than the other factors, so we are going to skip it.
-
-Total FLOPs: `7 S hidden_size²`  + `7 S hidden_size²` + `7 S hidden_size²` + `5 S intermediate_size` ~= `21 S hidden_size²`
+$$\begin{align}
+\text{Total FLOPS}_{\text{MLP}} &= \text{FLOPS}_{\text{Gate W1}} + \text{FLOPS}_{\text{Up W2}} + \text{FLOPS}_{\text{Swish}} + \text{FLOPS}_{\text{Element-wise Mult}} + \text{FLOPS}_{\text{Down W3}}\\
+&= 7S \times \text{hidden\_size}^2 + 7S \times \text{hidden\_size}^2 + 17.5S \times \text{hidden\_size} + 3.5S \times \text{hidden\_size} + 7S \times \text{hidden\_size}^2\\
+&= 21S \times \text{hidden\_size}^2 + 21S \times \text{hidden\_size} \approx 21S \times \text{hidden\_size}^2
+\end{align}$$
 
 ## LM Head
 
