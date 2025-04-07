@@ -237,16 +237,16 @@ $
 \end{aligned}
 $
 
-## Keys and values projections
+## Keys and Values Projections
 
-*As we explained before, the 1/8th part is Llama architecture specific due multi-query attention, see the "Model parameters and hardware requirements" paragrah*
+*As we explained before, the 1/8th part is Llama architecture specific due to multi-query attention, see the "Model parameters and hardware requirements" paragraph*
 
-### Shapes
+#### Shapes:
 - Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
 - Key Weight: $\mathbf{W}_K \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}/8}$
 - Value Weight: $\mathbf{W}_V \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}/8}$
 
-### FLOPS
+#### FLOPS:
 $$
 \begin{aligned}
 \text{FLOPS}_{\text{Key+Value}} &= 2 \times 2 \times S \times \text{hidden\_size} \times \text{hidden\_size}/8\\
@@ -266,6 +266,12 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 ```
 *Fig. 6: RoPE implementation*
 
+#### Shapes:
+- Query: $\mathbf{q} \in \mathbb{R}^{S \times \text{head\_dim} \times \text{num\_attention\_heads}}$
+- Key: $\mathbf{k} \in \mathbb{R}^{S \times \text{head\_dim} \times \text{num\_attention\_heads}}$
+- Cosine: $\mathbf{cos} \in \mathbb{R}^{S \times \text{head\_dim}}$
+- Sine: $\mathbf{sin} \in \mathbb{R}^{S \times \text{head\_dim}}$
+
 For each element in $\mathbf{q}$ and $\mathbf{k}$, the following operations are performed:
 
 - **Multiplications**: 2 per tensor
@@ -278,7 +284,7 @@ Since these operations are performed on both $\mathbf{q}$ and $\mathbf{k}$, the 
 
 - **Total operations per element**: 3 FLOPs per tensor $\times$ 2 tensors = **6 FLOPs**
 
-#### FLOPS
+#### FLOPS:
 
 $$
 \begin{aligned}
@@ -287,16 +293,17 @@ $$
 \end{aligned}
 $$
 
-
 ## Q × K^T
 
 *We assume the naive attention implementation. In practice, with algorithms like flash attention, we calculate it iteratively to save memory.*
 
-#### Shapes
-- Q shape: $(S, \text{head\_dim})$
-- K^T shape: $(\text{head\_dim}, S)$
+#### Shapes:
+- Query: $\mathbf{Q} \in \mathbb{R}^{S \times \text{num\_attention\_heads} \times \text{head\_dim}}$
+- Key: $\mathbf{K} \in \mathbb{R}^{S \times \text{num\_attention\_heads} \times \text{head\_dim}}$
+- Transposed Key: $\mathbf{K}^T$ (after appropriate reshaping and transposition)
+- Result: $\mathbf{QK}^T \in \mathbb{R}^{\text{num\_attention\_heads} \times S \times S}$
 
-#### FLOPS
+#### FLOPS:
 
 For each attention head:
 
@@ -312,10 +319,11 @@ $$\text{FLOPS total} = 2S^2 \times \text{head\_dim} \times \text{num\_attention\
 
 *It is kind of hard to estimate the FLOPs for Softmax. We approximate softmax as 5 FLOPs per element:*
 
-#### Shapes
-- Input shape: $(S, S)$
+#### Shapes:
+- Input: $\mathbf{A} \in \mathbb{R}^{S \times S \times \text{num\_attention\_heads}}$
+- Output: $\mathbf{A}_{\text{softmax}} \in \mathbb{R}^{S \times S \times \text{num\_attention\_heads}}$
 
-#### FLOPS
+#### FLOPS:
 
 $$ \text{FLOPS}_{\text{softmax}} = 5 \times S \times S \times \text{num\_attention\_heads} = 5S^2 \times \text{num\_attention\_heads} $$
 
@@ -323,11 +331,12 @@ $$ \text{FLOPS}_{\text{softmax}} = 5 \times S \times S \times \text{num\_attenti
 
 ## Attention Output $(Q @ K^T) @ V$ 
 
-#### Shapes
-- Input shape (attention scores): $(S, S)$
-- V matrix shape: $(S, \text{head\_size})$
+#### Shapes:
+- Attention Scores: $\mathbf{A}_{\text{softmax}} \in \mathbb{R}^{S \times S \times \text{num\_attention\_heads}}$
+- Value Matrix: $\mathbf{V} \in \mathbb{R}^{S \times \text{head\_size} \times \text{num\_attention\_heads}}$
+- Output: $\mathbf{O} \in \mathbb{R}^{S \times \text{hidden\_size}}$
 
-#### FLOPS
+#### FLOPS:
 
 For each head:
 $$\text{FLOPS}_{\text{attn output per head}} = 2 \times S \times S \times \text{head\_size} = 2S^2 \times \text{head\_size}$$
@@ -337,15 +346,14 @@ $$\text{FLOPS}_{\text{attn output total}} = 2S^2 \times \text{head\_size} \times
 
 ## O-Projection
 
-#### Shapes
-- Input shape: $(S, \text{hidden\_size})$
-- $W_o$ matrix: $(\text{hidden\_size}, \text{hidden\_size})$
+#### Shapes:
+- Input: $\mathbf{O} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Weight Matrix: $\mathbf{W}_O \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}}$
+- Output: $\mathbf{O}_{\text{proj}} \in \mathbb{R}^{S \times \text{hidden\_size}}$
 
-#### FLOPS
+#### FLOPS:
 
 $$\text{FLOPS}_{\text{O-projection}} = 2 \times S \times \text{hidden\_size} \times \text{hidden\_size} = 2S \times \text{hidden\_size}^2$$
-
-
 ## Total FLOPs for Self-Attention
 
 **RMS Norm:** $4S \times \text{hidden\_size}$
