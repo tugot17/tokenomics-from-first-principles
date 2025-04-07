@@ -438,36 +438,57 @@ $$\begin{align}
 
 ## LM Head
 
-- Input shape `(S, hidden_size)`
-- LM head weights shape `(hidden_size, vocab_size)`
+#### Shapes
+- Input shape: $(S, \text{hidden\_size})$
+- LM head weights shape: $(\text{hidden\_size}, \text{vocab\_size})$
 
-FLOPs: `2 x S x hidden_size x vocab_size = 2 S hidden_size vocab_size`
+#### FLOPS
 
-## Total FLOPs in a Llama model
+$$\text{FLOPS}_{\text{LM Head}} = 2 \times S \times \text{hidden\_size} \times \text{vocab\_size} = 2S \times \text{hidden\_size} \times \text{vocab\_size}$$
+
+## Total FLOPs in a Llama Model
 
 Total FLOPs in the Llama model is a product of the number of FLOPs per transformer block times the number of blocks, plus the FLOPs for the LM head.
 
-Transformer block:
+### Transformer Block
 
-- **Attention:** `10S × hidden_size + 4.5S × hidden_size² + 4S² × hidden_size + 5S² × num_attention_heads`
-- **MLP:** `21 S hidden_size²`
-- **Total of:** `10S × hidden_size + 25.5S × hidden_size² + 4S² × hidden_size + 5S² × num_attention_heads`
+#### Components
+- **Attention:** $10S \times \text{hidden\_size} + 4.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}$
+- **MLP:** $21S \times \text{hidden\_size}^2$
 
-LM head: `2 S hidden_size vocab_size`
+#### Total Per Block
+$10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}$
 
-Total of: `num_hidden_layers` x (`10S × hidden_size + 25.5S × hidden_size² + 4S² × hidden_size + 5S² × num_attention_heads) + 2 S hidden_size vocab_size`
+### LM Head
+$2S \times \text{hidden\_size} \times \text{vocab\_size}$
 
-For LLama 3.3 70B with `hidden_size=8192; vocab_size=128256; num_attention_heads=64`;  and `num_hidden_layers=80` ; for `S=2048` tokens, it takes us to the total of:
+### Total FLOPs Calculation
 
-$$
-FLOPs: \text{num\_hidden\_layers} \times (10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}) + 2S \cdot \text{hidden\_size} \cdot \text{vocab\_size} = 80 \times (10 \times 2048 \times 8192 + 25.5 \times 2048 \times 8192^2 + 4 \times 2048^2 \times 8192 + 5 \times 2048^2 \times 64) + 2 \times 2048 \times 8192 \times 128256 = 2.9579 \times 10^{14} = 296 \times 10^{12} = 296 \ TFLOPS
-$$
+#### Formula
+$\text{Total FLOPs} = \text{num\_hidden\_layers} \times (10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}) + 2S \times \text{hidden\_size} \times \text{vocab\_size}$
 
-`296 TFLOPs` is roughly the order of magnitude of FLOPs available in a modern GPU (see Fig. 2). E.g., for H100s, it would theoretically take roughly `296/989 = 0.3s`to process a prompt of 2048 tokens.
+#### Example: Llama 3.3 70B
+For Llama 3.3 70B with:
+- $\text{hidden\_size} = 8192$
+- $\text{vocab\_size} = 128256$
+- $\text{num\_attention\_heads} = 64$
+- $\text{num\_hidden\_layers} = 80$
+- $S = 2048$ tokens
 
-As a reminder, in order to load the model from global memory, we need to load `141GB` worth of parameters. The memory bandwidth of the modern GPU is around `3350GB/s`, meaning that in theory it will take `141/3350=0.04s` to load the entire model from the global memory - roughly 7x faster than the time needed for all of the computations.
+$$\begin{align}
+\text{Total FLOPs} &= 80 \times (10 \times 2048 \times 8192 + 25.5 \times 2048 \times 8192^2 + 4 \times 2048^2 \times 8192 + 5 \times 2048^2 \times 64)\\
+&+ 2 \times 2048 \times 8192 \times 128256\\
+&= 2.9579 \times 10^{14}\\
+&= 296 \times 10^{12}\\
+&= 296 \text{ TFLOPs}
+\end{align}$$
 
-This shows us that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
+
+$296 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100s, it would theoretically take roughly $296/989 = 0.3s$ to process a prompt of 2048 tokens.
+
+As a reminder, to load the model from global memory, we need to load $141\text{GB}$ worth of parameters. The memory bandwidth of a modern GPU is around $3350\text{GB/s}$, meaning that in theory it will take $141/3350 = 0.04s$ to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
+
+This demonstrates that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
 
 # Token by token/decode phase
 
