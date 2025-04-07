@@ -215,23 +215,44 @@ def rms_norm(x, weight, eps=1e-6):
     return x / rms * weight
 ```
 
-FLOPS: `S × hidden_size × 1 (square) + S × hidden_size (mean) + S × 1 (add epsilon) + S × 1 (sqrt) + S × hidden_size (division) + S × hidden_size (multiplication)=S × hidden_size × 4 + S × 2 ~= 4 S hidden_size`
+$$ \begin{aligned} \text{FLOPS}_{\text{RMSNorm}} &= S \times d \times 1 \text{ (square)} \ &+ S \times d \text{ (mean)} \ &+ S \times 1 \text{ (add epsilon)} \ &+ S \times 1 \text{ (sqrt)} \ &+ S \times d \text{ (division)} \ &+ S \times d \text{ (multiplication)} \end{aligned} $$
 
-### Query projection
+Simplifying the expression:
 
-- **Input shape**: (S, head_dim)
-- **Weight matrix shape**: (hidden_size, hidden_size)
+$$ \begin{aligned} \text{FLOPS}_{\text{RMSNorm}} &= S \times d \times 4 + S \times 2 \ &\approx 4 \times S \times d \end{aligned} $$
 
-FLOPs: `2 x S x hidden_size x hidden_size` = `2 S hidden_size²`
 
-### Keys and values projections
+## Query Projection
 
-- **Input shape**: (S, hidden_size)
-- **Weight matrix shape**: (hidden_size, hidden_size/8*)
+#### Shapes: 
+- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Weight: $\mathbf{W}_Q \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}}$
 
-*llama architecture specific, multi query attention
+#### FLOPS:
 
-Combined FLOPs of k and v: `2 x 2 x S x hidden_size x hidden_size/8` = `1/2 S hidden_size²`
+$
+\begin{aligned}
+\text{FLOPS}_{\text{Query}} &= 2 \times S \times \text{hidden\_size} \times \text{hidden\_size}\\
+&= 2 \times S \times \text{hidden\_size}^2
+\end{aligned}
+$
+
+## Keys and values projections
+
+*As we explained before, the 1/8th part is Llama architecture specific due multi-query attention, see the "Model parameters and hardware requirements" paragrah*
+
+### Shapes
+- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Key Weight: $\mathbf{W}_K \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}/8}$
+- Value Weight: $\mathbf{W}_V \in \mathbb{R}^{\text{hidden\_size} \times \text{hidden\_size}/8}$
+
+### FLOPS
+$$
+\begin{aligned}
+\text{FLOPS}_{\text{Key+Value}} &= 2 \times 2 \times S \times \text{hidden\_size} \times \text{hidden\_size}/8\\
+&= \frac{1}{2} \times S \times \text{hidden\_size}^2
+\end{aligned}
+$$
 
 ### Positional Embedding (RoPE)
 
