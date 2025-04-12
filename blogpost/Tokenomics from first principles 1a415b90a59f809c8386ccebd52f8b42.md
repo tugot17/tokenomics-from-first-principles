@@ -633,7 +633,7 @@ While 617 MB may sound not that significant, this number scales linearly with th
 
 Model weights, plus a KV cache, is roughly `141 + 0.6 ≈ 142GB`so it takes `142/3350 = 0.04s` to load it from the global memory. We calculated above that it only takes `0.00014s` to do all computations (assuming full compute utilization)—so it takes two orders of magnitude more time to load the model weights than to do the actual computations. This is what we mean by the token-by-token phase of using LLMs being memory bound. We are primarily limited by the speed of available memory, not by the speed of compute.
 
-**This is one of the insights we hope you take out of reading this article—token-by-token is memory bound; the amount of available compute is not that important, as we massively underutilize the compute resources.**
+**This is one of the insights we hope you take out of reading this article—token-by-token is memory bound; the amount of available compute is of secondary importance, as we massively underutilize the compute resources anyway while waiting for weights to be loaded.**
 
 # Scaling with the input length
 
@@ -694,13 +694,14 @@ The upside of such an approach is the very limited communications between the de
 
 We can also do continuous batching—GPU:0 processes batch 0 and is passing it to GPU:1, then batch 1 is coming in, and GPU:0 can process batch 1 while GPU:1 is processing batch 0, etc (see Fig. 12). This setting minimizes the communications between the devices, ensuring the maximum throughput; however, it comes at a price—at a single time spot, we only have access to 1/4 of the available compute and memory bandwidth, and we can only use a single GPU at a single point in time. If we are unable to attract large batches flowing continuously into our inference system, this will be a severe limitation of this approach.
 
-Due to these problems for the rest of this text we will focus on analyzing the tensor parallel setting.
+In practice, orchestrating efficient overlapping batching can be quite challenging; hence, for the remaining part of this text, we will focus on analyzing the tensor parallel setting.
 
 ## Tensor parallelism
 
-In tensor parallelism (TP), individual neural network layers are split across multiple GPUs, harnessing the combined compute power and memory bandwidth of all devices. This approach significantly accelerates per-layer processing, but introduces important tradeoffs that must be carefully considered.
+The mainstream parallelism strategy, used by a vast majority of cloud providers, is tensor parallelism (TP). In TP, individual neural network layers are split across multiple GPUs, harnessing the combined compute power and memory bandwidth of all devices. This approach significantly accelerates per-layer processing but introduces important trade-offs that must be carefully considered.
 
-1. **Communication Overhead**: in regular intervals, the execution must synchronize across GPUs, introducing a significant delay (in the order of milliseconds) per synchronization event that scales with the number of devices (`k`). This overhead varies significantly based on interconnect technology (NVLink, PCIe, etc.) and network topology.
+1. **Communication Overhead**: In regular intervals, e.g., twice per layer as in transformer architecture, the execution must synchronize across GPUs, introducing a significant delay (in the order of milliseconds) per synchronization event. This overhead varies significantly based on interconnect technology (NVLink, PCIe, etc.) and network topology.
+
 2. **Sequential Batch Processing**: Unlike pipeline parallelism, TP requires all GPUs to process the same batch simultaneously. A new batch cannot begin until the current one completes, reducing throughput efficiency under dynamic workloads.
 
 The most efficient parallelization strategy is to have so called **column-wise** split linear layer (we split by the column dimension) followed by the **row-wise** layer (split across the row dimension). Such layout minimizes the synchronization to only one sync every two layers.
@@ -769,7 +770,7 @@ Fig. 13: The Colwise → Rowwise layout for a transformer layer from that is use
 
 Fig. 14: The Colwise → Rowwise split we see in a transformer block.
 
-Correctly estimating the extra overhead from the coms is quite complicated.  In theory, we would need to take into account the two following factors:
+Correctly estimating the extra overhead from the coms is quite complicated. In theory, we would need to take into account the two following factors:
 
 1. **Message passing latency**: Typically 3-5 μs depending on hardware
 2. **Data transfer time**: Based on interconnect bandwidth
@@ -780,18 +781,7 @@ $$
 \text{Overhead} \approx \frac{\text{params} \times \text{comms/layer} \times \text{hidden size} \times \text{number of layers} \times (N-1)/N}{\text{bandwidth}} = \\ \frac{2 \times 2 \times 8192 \times 80 \times 3/4}{450 \times 10^9} \approx 4\ \mu\text{s}
 $$
 
-The total overhead of 8 or 9µs would be awesome. However, in practice, this gets much more complicated. The total overhead is contingent on the number of factors, such as:
-
-- The type of all-reduce algorithm (ring, tree, etc.) and its efficiency
-- Synchronization cost between all 4 GPUs
-- the actual connection topology between the devices
-- kernel launch overhead
-- Suboptimal memory access patterns
-- NCCL overhead
-- **Memory management overhead**—additional memory allocations and copies required for tensor parallelism.
-- miscellaneous
-
-These factors make accurate overhead modeling extremely challenging. As we'll demonstrate in the next sections, the gap between theoretical and actual performance can be substantial, requiring empirical measurement for accurate system modeling.
+The total overhead of 8 or 9 µs would be awesome. However, in practice, it gets much more complicated. During the sync barrier, the compute graph is effectively stalled. We have a constant overhead of a few ms when the GPUs are idling while waiting for the sync to be finished. This extra "tax" is the reason preventing us from utilizing the full memory bandwidth we have available across all the GPUs. Accurate overhead modeling is quite challenging. As we'll demonstrate in the next sections, the gap between theoretical and actual performance can be quite substantial, requiring empirical measurement for accurate system modeling.
 
 # Batching - the key to good economics
 
@@ -886,7 +876,7 @@ While the total throughput is increasing with the batch size, for the per-reques
 
 Fig. 17: Throughput variance throughout the day from OpenRouter. The variance can be somehow explained by the varying demand for the service throughput the day resulting in varying batch sizes.
 
-It is also (part of the) reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economies of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy, that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
+It is also (part of the) reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economies of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy (pipeline parallelism offers less coms overhead), that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
 
 Now let’s compare the results we get from our model to the actual LLM inference performance. For this, we run a vllm server (a popular LLM serving framework) with LLama 3.3 70B on 4 H100s connected with NVLink. The result is quite underwhelming.
 
@@ -1011,9 +1001,8 @@ Well, this is the problem at the core of GPU optimization—in practice, it is a
   - Instruction mix that isn't optimal for utilizing all GPU units
   - … and a dozen other factors
 - We assumed very little overhead from the coms; as we explored previously, this is not necessarily the case in practice. In practice, we have tons of other factors that contribute to the potential extra latency, such as
-  - Latency from message passing
+  - Having to sync the CuDA graph across devices for cross gpu comms
   - Synchronization barriers that force all GPUs to wait for the slowest one
-  - extra overhead that comes with the details of a specific all-reduce algorithm used
   - internal buffers and management overhead
   - potential suboptimal (non-coalesced) memory access patterns, especially at larger sizes, with KV caches being stored in random pages of the VRAM memory
   - and other factors we don’t mention here
