@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "timestamp": "2025-03-21T12:58:59.312951",
+    "model": "llama-3.3-70bb",
+    "dataset_key": "dummy_1024",
+    "api_base": "http://localhost:8000/v1",
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "num_runs": 3,
+    "max_tokens": 1,
+    "temperature": 0.5,
+    "seed": 42,
+    "description": "LLama 3.3 TP4, no spec dec"
+  },
+  "results": {
+    "1": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 0.10799981855476896,
+      "tokens_per_second_in_batch": 9.260146819297335,
+      "avg_tokens_per_second": 9.292008292417894
+    },
+    "2": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 0.20450582929576436,
+      "tokens_per_second_in_batch": 9.852757752842905,
+      "avg_tokens_per_second": 5.430431172334012
+    },
+    "4": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 0.3454384943470359,
+      "tokens_per_second_in_batch": 11.579488212971173,
+      "avg_tokens_per_second": 3.3821456882756205
+    },
+    "8": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 0.6584008003895482,
+      "tokens_per_second_in_batch": 12.150653750399483,
+      "avg_tokens_per_second": 2.3266699300854454
+    },
+    "16": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 1.3585612424649298,
+      "tokens_per_second_in_batch": 11.779128000647244,
+      "avg_tokens_per_second": 1.4015164745795652
+    },
+    "32": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 2.6937010272716484,
+      "tokens_per_second_in_batch": 11.879768209463936,
+      "avg_tokens_per_second": 0.8294920067804423
+    },
+    "64": {
+      "avg_input_tokens": 1059.0,
+      "avg_output_tokens": 1.0,
+      "elapsed_time": 5.965796098733942,
+      "tokens_per_second_in_batch": 10.791856964026623,
+      "avg_tokens_per_second": 0.359852887874104
+    }
+  }
+}

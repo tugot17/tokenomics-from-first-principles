@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "timestamp": "2025-03-21T18:30:19.035530",
+    "model": "llama-3.3-70bb",
+    "dataset_key": "dummy_10000",
+    "api_base": "http://localhost:8000/v1",
+    "batch_sizes": [
+      1,
+      2,
+      4
+    ],
+    "num_runs": 1,
+    "max_tokens": 300,
+    "temperature": 0.5,
+    "seed": 42,
+    "description": "LLama 3.3 TP4, no spec dec"
+  },
+  "results": {
+    "1": {
+      "avg_input_tokens": 10035.0,
+      "avg_output_tokens": 300.0,
+      "elapsed_time": 7.271923932246864,
+      "tokens_per_second_in_batch": 41.25455695014492,
+      "avg_tokens_per_second": 41.25716779922401
+    },
+    "2": {
+      "avg_input_tokens": 10035.0,
+      "avg_output_tokens": 300.0,
+      "elapsed_time": 8.605903786141425,
+      "tokens_per_second_in_batch": 69.71958029163817,
+      "avg_tokens_per_second": 35.090139930900015
+    },
+    "4": {
+      "avg_input_tokens": 10035.0,
+      "avg_output_tokens": 300.0,
+      "elapsed_time": 11.14844072330743,
+      "tokens_per_second_in_batch": 107.63837112137361,
+      "avg_tokens_per_second": 27.34119492769788
+    }
+  }
+}
