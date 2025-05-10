@@ -672,7 +672,7 @@ Initially the size of the KV cache will be negligible compared to the model size
 
 The intuition to develop here is that for small batches and short sequences, the sequence length has minimal impact on throughput because loading model weights dominates the memory bandwidth utilization. However, as either batch size or sequence length increases, loading the KV cache takes an amount of time to load for each token, eventually surpassing the time consumed by loading of the model weights themselves.
 
-This transition creates two distinct performance regimes: in the so-called model-dominated regime (short sequences/small batches), throughput remains relatively stable despite increasing sequence length. Once we enter the KV-cache-dominated regime, generation speed begins to degrade in proportion to sequence length. The additional time loading the KV cache takes scales linearly w.r.t. sequence length.
+This transition creates two distinct performance regimes: in the so-called model-dominated regime (short sequences/small batches), throughput remains relatively stable despite increasing sequence length. Once we enter the KV-cache-dominated regime, generation speed begins to degrade in proportion to sequence length. This is largely irrelevant for short sequence lengths but is a significant issue at very long sequence lengths (in the 10s order of thousand of tokens) The additional time loading the KV cache takes scales linearly w.r.t. sequence length.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%206.png)
 
@@ -793,21 +793,21 @@ $$
 \text{Overhead} \approx \frac{\text{params} \times \text{comms/layer} \times \text{hidden size} \times \text{number of layers} \times (N-1)/N}{\text{bandwidth}} = \\ \frac{2 \times 2 \times 8192 \times 80 \times 3/4}{450 \times 10^9} \approx 4\ \mu\text{s}
 $$
 
-The total overhead of 8 or 9 µs would be awesome. However, in practice, it gets much more complicated. During the sync barrier, the compute graph is effectively stalled. We have a constant overhead of a few ms when the GPUs are idling while waiting for the sync to be finished. This extra "tax" is the reason preventing us from utilizing the full memory bandwidth we have available across all the GPUs. Accurate overhead modeling is quite challenging. As we'll demonstrate in the next sections, the gap between theoretical and actual performance can be quite substantial, requiring empirical measurement for accurate system modeling.
+The total overhead of 8 or 9 µs would be awesome. However, in practice, it gets much more complicated. During the sync barrier, the compute graph is stalled. We have a constant overhead of a few ms when the GPUs are idling while waiting for the sync to be finished. This extra "tax" is of the the main reasons preventing us from utilizing the full memory bandwidth we have available across all the GPUs. Accurately modeling the overhead is quite challenging. As we'll demonstrate in the next sections, the gap between theoretical and actual performance can be quite substantial, requiring empirical measurement for accurate system modeling.
 
 # Batching - the key to good economics
 
 As we showed before, during the token-by-token phase, we are primarily memory bound—meaning the main limitation in terms of tokens/s we can get is how fast our GPU is able to load the model weights from the global memory. To generate every single token, we always need to load the entire model.
 
-There is an obvious optimization we could introduce to improve the economics of our operation—run larger batches. Batches are a natural improvement because we can load the model weights once, but we can use the loaded weights to do inference with multiple examples from our batch at the same time.
+There is an obvious optimization we could introduce to improve the economics of our operation—run larger batches. Batches are a natural improvement because we can load the model weights once, but we can use the loaded weights to do inference with multiple items from our batch at the same time (and so serve different customers simultaneously).
 
-Increasing the batch size increases the compute usage linearly—we have `k` times more multiplications to do, but it only marginally changes the memory usage, only for loading the additional KV cache. Since the extra memory for the KV cache is significantly smaller than the memory needed for the model, it only adds a small overhead, but it linearly increases the number of produced tokens. We produce twice as many tokens for a batch of 2, and 16x as many tokens with a batch of 16.
+Increasing the batch size increases the compute usage linearly - we have `k` times more multiplications to do, but it only marginally changes the memory bandwidth used (only for loading the KV cache) so it's an easy way to increase the compute intensity for our otherwise heavily memory bound algorithm (to make it less memory bound). Since the extra memory for the KV cache is significantly smaller than the memory needed for the model, it only adds a small overhead, but it linearly increases the number of produced tokens. We produce twice as many tokens for a batch of 2, and 16x as many tokens with a batch of 16.
 
-**This is the core message of this text and the main intuition we hope you develop:** as we grow the batch size, we can effectively share the time to load the model from high bandwidth memory (HBM), aka our cost of loading the model is split across an increasing number of clients, enjoying the **economies of scale** and decreasing the per-request cost. **Having sufficient demand and continuously serving big batches is the key to running a profitable operation; if you can't support large batches, your cost per token will balloon, making your operation unprofitable*.**
+**This is the core message of this post and the main intuition we hope you take away from reading this:** as we grow the batch size, we can effectively share the time to load the model from high bandwidth memory (HBM), aka our cost of loading the model is split across an increasing number of clients, enjoying the **economies of scale** and decreasing the per-request cost. **Having sufficient demand and continuously serving big batches is the key to running a profitable LLM inference business; if you can't support large batches, your cost per token will balloon, making your operation unprofitable*.** (greetings to the Groq team)
 
 *One thing to note is that there is a limit to this model. As we approach really long sequences or really big batches, as we will see in our experiments, the memory footprint of the KV cache starts to slowly overtake the memory footprint of the model itself (see Fig. 15). When this happens, the cost of loading the model will become increasingly irrelevant to the total time of loading data from the global memory.
 
-"Luckily" for us, this situation also has its limit—the memory limit of a GPU node; in the case of H100s, it will be 8 × H100 = 8 × 80GB = 640GB. Note how for a batch of 8 at the full context length of Llama we are already nearly there.
+"Luckily" for us, this situation also has its limit—the memory limit of a GPU node; in the case of H100 cards, it will be 8 × H100 = 8 × 80GB = 640GB. Note how for a batch of 8 at the full context length of Llama we are already nearly there.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%209.png)
 
@@ -818,12 +818,12 @@ Fig. 15: KV cache scaling - comparison between different batch sizes. Note how t
 After all of the theoretical introductions, let’s try to combine all of that we learned so far to estimate the LLM throughput. We will:
 
 - Develop a simplified throughput model based on the GPU specification.
-- Compare it with a real-world throughput of Llama 3.3 70B on 4 H100s.
+- Compare it with a real-world throughput of Llama 3.3 70B on 4 H100 cards.
 - Explain the discrepancies between theoretical and actual performance
 
-The time to produce a response to a prompt is a combination of the pre-fill time and the decode time. The more output tokens we produce, the smaller will be the time spent in the prefill phase. The prefill time is primarily compute bound, and the time for token-by-token is primarily memory bound.
+The time to produce a response to a prompt is a combination of the pre-fill time and the decode time times number of decode tokens. The more output tokens we produce, the smaller share of time will be the spent in the prefill phase. The prefill time is primarily compute bound, and the time for token-by-token is primarily memory bound.
 
-Since prefill is so much compute bound, we can estimate the time by dividing the number of floating-point operations during prefill by the total effective FLOPS across all of the GPUs, plus the extra latency from coms.
+Since prefill is so heavily compute bound, we can estimate the time by dividing the number of floating-point operations during prefill by the total effective FLOPS across all of the GPUs, plus the extra latency from cross GPU communication time.
 
 The decode time is mainly memory bound, but as we increase the batch size, the compute component will become increasingly important. We will calculate both and take the more significant factor. InWe also spend some small amount of time in coms.
 
@@ -874,23 +874,23 @@ def decode_time(self, sequence_length, batch_size=1, generated_tokens=1):
 
 The entire script can be found [here](https://github.com/tugot17/tokenomics-from-first-principles/blob/blogpost-code/throughput_simulations/tokenomics_model.py).
 
-For a llama 3.3 70B, with 2035 tokens in and 300 out we will get such an estimation:
+For a Llama 3.3 70B, with 2035 tokens in and 300 tokens out we will get these estimates:
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%2010.png)
 
-Fig. 16: The throughput estimated using first principles. We can observe what we discussed before, as the batch size increases the extra memory that needs to be loaded for KV cache the speed per request decreases.
+Fig. 16: The throughput estimated using first principles. We can observe what we discussed before, as the batch size increases the extra memory that needs to be loaded for KV cache the speed per request decreases. (NOTE to Piotr: same y axis scale for both)
 
 Let’s first look at the estimated model performance under the different batch sizes. As we derived before, **batch size is the single most relevant statistic regarding the tokenomics**. Look how the throughput scales nearly linearly with the batch size (see Fig. 16). This is the single most important message you should get out of this text. The key to the good tokenomics is running the models at a large batch size, which is caused by the LLM inference being memory bound—meaning we want to share the cost of loading the model into the memory across as many requests as possible. As the KV cache size is approaching the model size, the total throughput gains are diminishing.
 
-While the total throughput is increasing with the batch size, for the per-request speed is decreasing, and the slowdown is accelerating as we increase the batch size, due to the increased memory footprint of the KV cache. At some point, with massive batches, the per-request experience will be massively degraded. This means that even if we can support larger batches, e.g., due to the massive demand as Deepseek experienced in February 2025, we might not want to do so because of the poor token speed each user will experience. In general, the variance in speed you experience on OpenRouter (see Fig. 17) can be largely attributed to the current demand, aka the batch size.
+While the total throughput is increasing with the batch size, for the per-request speed is decreasing, and the slowdown is accelerating as we increase the batch size, due to the increased memory footprint of the KV cache. At some point, with massive batches, the per-request experience will be massively degraded. This means that even if we can support larger batches, e.g., due to the massive demand as Deepseek experienced in February 2025, we might not want to do so because of the poor token generation speed each user will experience. In general, the variance in speed you experience on OpenRouter (see Fig. 17) can be largely attributed to the current demand, aka the batch size.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%2011.png)
 
 Fig. 17: Throughput variance throughout the day from OpenRouter. The variance can be somehow explained by the varying demand for the service throughput the day resulting in varying batch sizes.
 
-It is also (part of the) reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economies of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy (pipeline parallelism offers less coms overhead), that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
+It is also (part of the) reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economy of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy (pipeline parallelism offers less cross device communications overhead), that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
 
-Now let’s compare the results we get from our model to the actual LLM inference performance. For this, we run a vllm server (a popular LLM serving framework) with LLama 3.3 70B on 4 H100s connected with NVLink. The result is quite underwhelming.
+Now let’s compare the results we get from our model to the actual LLM inference performance. For this, we run a vllm inference server (a popular LLM serving framework) with LLama 3.3 70B on 4 H100 cards connected with NVLink. The result is quite underwhelming.
 
 ```python
 {
@@ -1004,16 +1004,16 @@ While the general sigmoid-like shape is quite similar the actual values are very
 
 Fig. 20: As we increase the batch size the discrepancies between estimated throughput and the measured one increase.
 
-Well, this is the problem at the core of GPU optimization—in practice, it is actually extremely hard to properly estimate the wall-time performance of the GPU application.  There are thousands of compounding factors here that compound, making the picture more blurry. To mention a few things that are likely contributing to the discrepancy in the observed results vs. reality:
+Well, this is the problem at the core of GPU optimization - in practice, it is actually extremely hard to properly estimate the wall-time performance of the GPU application.  There are many of compounding factors here, making the picture more blurry. To mention a few things that are likely contributing to the discrepancy in the observed results vs. reality:
 
 - In our model we assumed 100% memory and compute utilization. Theoretical peak performance metrics like TFLOPS and memory bandwidth are never fully achieved in practice. GPUs typically achieve only 50-70% of their theoretical compute capacity due to
   - Kernel launch overhead and synchronization costs
   - Memory access patterns that don't perfectly align with cache architectures
   - Warp divergence and other GPU-specific inefficiencies
   - Instruction mix that isn't optimal for utilizing all GPU units
-  - … and a dozen other factors
-- We assumed very little overhead from the coms; as we explored previously, this is not necessarily the case in practice. In practice, we have tons of other factors that contribute to the potential extra latency, such as
-  - Having to sync the CuDA graph across devices for cross gpu comms
+  - … and a a lot of other factors
+- We assumed very little overhead from the cross device communication; as we explored previously, this is not necessarily the case in practice. In practice, we have tons of other factors that contribute to the potential extra latency, such as
+  - Having to sync the CUDA graph across devices for cross GPU communication
   - Synchronization barriers that force all GPUs to wait for the slowest one
   - internal buffers and management overhead
   - potential suboptimal (non-coalesced) memory access patterns, especially at larger sizes, with KV caches being stored in random pages of the VRAM memory
@@ -1026,23 +1026,23 @@ We tried to account for some of the above and include them in the extended simul
 
 ![throughput_comparison_llama-3-3-70b_4x_2035in_300out.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/throughput_comparison_llama-3-3-70b_4x_2035in_300out.png)
 
-Fig. 21: Updated model vs reality. Now the two lines are much closer. We achieve this via adding the estimated overhead to the model. We run it for 2k tokens in 300 tokens out.
+Fig. 21: Updated model vs reality. Now the two lines are much closer. We achieve this via adding the estimated overhead to the model. We run it for 2k tokens input 300 tokens output.
 
 While far from perfect, it kind of works. It generalizes pretty well to other sizes; e.g., it works for the Llama 3.1 8B run on TP1.
 
 ![throughput_comparison_llama-3-1-8b_1x_2035in_300out.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/throughput_comparison_llama-3-1-8b_1x_2035in_300out.png)
 
-Fig. 22:The estimation we run seems to work quite well for other model sizes. E.g. here we run for Llama 3.1 8B, 2k tokens in 300 tokens out. The two lines are pretty close.
+Fig. 22: The estimation we run seems to work quite well for other model sizes. E.g. here we run for Llama 3.1 8B, 2k tokens input 300 tokens output. The two lines are pretty close.
 
-However, when tried with different batches of different lengths, the differences are more significant, suggesting that the model is far, far from perfect. E.g., we tried estimating the throughput for long context model performance, with 16k tokens in and 1000 tokens out. Due to excessive memory demand, we kept this setting at a batch of 8. In such a case, the model failed to correctly predict the final throughput, suggesting that it is far from a perfect tool.
+However, when tried with different batches of different lengths, the differences are more significant, suggesting that the model is far, far from perfect. E.g., we tried estimating the throughput for long context model performance, with 16k tokens in and 1000 tokens out. Due to excessive memory consumption, we kept this setting at a batch size of 8. In such a case, the model failed to correctly predict the final throughput, suggesting that it is our model is far from perfect.
 
 ![throughput_comparison_llama-3-3-70b_4x_16035in_1000out.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/throughput_comparison_llama-3-3-70b_4x_16035in_1000out.png)
 
 ![throughput_comparison_llama-3-1-8b_1x_16035in_1000out.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/throughput_comparison_llama-3-1-8b_1x_16035in_1000out.png)
 
-Fig. 23: Unfortunately for different input output configurations, 16k tokens in, 2k tokens out in this case, the model estimate the throughput less accurately, more so for Llama 3.3 70B and less so for Llama 3.1 8B.
+Fig. 23: Unfortunately for different input output configurations, 16k tokens input, 2k tokens output in this case, the model estimate the throughput less accurately, more so for Llama 3.3 70B and less so for Llama 3.1 8B.
 
-How challenging it is to correctly predict a model's throughput is another thing that we hope you can take out of reading this text. Accurately estimating it would require a series of very detailed profiling steps, such as profiling the memory access patterns across multiple model sizes, batch sizes, and prompt length combinations, delving deeply into the exact implementation details of (pagged) attention implementation, estimating how different shapes affect the compute and memory utilization, and dozens of different experiments. We deem accurate estimation across different settings challenging to a degree that it might not be feasible to do so in practice. If you want accurate results, you are probably better off just measuring the real-world results.
+How challenging it is to correctly predict a model's throughput is another thing that we hope you can take out of reading this text. Accurately estimating it would require a series of very detailed profiling steps, such as profiling the memory access patterns across multiple model sizes, batch sizes, and prompt length combinations, delving deeply into the exact implementation details of (paged) attention implementation, implementation details of the batch scheduling, estimating how different shapes affect the compute and memory utilization, and dozens of different experiments. We deem an accurate estimation across different settings challenging to a degree that it might not be feasible to do so in practice. If you want accurate results, you are probably better off just measuring the real-world results.
 
 # From tokens to dollars - estimating tokenomics
 
@@ -1050,7 +1050,7 @@ As you might know, the pricing of various LLM providers is token-based: you will
 
 To summarize what we learned so far:
 
-- The time of pre-fill is quadratically dependent on the sequence length. As the prefill size grows, it will occupy an increasingly big percentage of the request processing time.
+- The time of prefill is quadratically dependent on the sequence length. As the input size grows, it will occupy an increasingly big percentage of the request processing time.
 - The time spent generating a single tokens grows linearly as the context length grows. KV cache will gradually become a more and more substantial percentage of the total data loaded from the global memory (alongside the model parameters). 
 - Since the time of generating a single token is can be well approximated by cost of loading the model weights once from global memory, this time grows linearly with the number of generated tokens.
 
@@ -1084,7 +1084,7 @@ $$
 \beta = \frac{\$0.0028 \times 8.96}{16 \times (0.3 \times 2035 + 300)} = \$0.00000172
 $$
 
-Which equals approximately $1.72 per million output tokens and $0.51 per million input tokens.
+Which equals approximately \$1.72 per million output tokens and \$0.51 per million input tokens.
 
 We apply same calculations to the different batch sizes based on the experiments we did run in the previous section. As you can see there is a dramatic price reduction with increasing batch size. The reader should verify that the reduction is directly proportional to the increased total throughput from running larger batches.
 
@@ -1101,7 +1101,7 @@ We apply same calculations to the different batch sizes based on the experiments
 
 ```
 
-Table 1: Estimated cost per 1M tokens for different batch sizes, assuming that the batch is 2035 tokens in, 300 tokens out. The pricing is estimated via method described in this paragraph.
+Table 1: Estimated cost per 1M tokens for different batch sizes, assuming that the batch is 2035 tokens input, 300 tokens output. The pricing is estimated via method described in this paragraph.
 
 Obviously, the above is just a single data point from a single experiment for a single pair of input and output tokens. If we change the proportions of input and output tokens, the picture will be very different. To get a more realistic picture, we could for example run a Monte Carlo simulation— gathering multiple data points for different input and output configs, calculating the pricing for each example, removing the outliers (e.g. random slower executions due to external factors), and calculating the final price as an average of the median of these samples.
 
