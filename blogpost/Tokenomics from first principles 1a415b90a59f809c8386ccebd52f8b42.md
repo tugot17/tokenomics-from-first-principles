@@ -544,9 +544,9 @@ This demonstrates that in the pre-fill phase we are much more bound by the avail
 
 # Token by token/decode phase
 
-After the first forward pass, model produces a new token. We append said token at the end of the sequence, and we proceed to generate the next token. As we showed above, this is quite computationally intensive (hundreds of TFLOPs). To optimize the subsequent token generation process, the ML community developed several techniques, most notably KV caching.
+This first forward pass for doing the prefill is computationally very expensive. We can eliminate doing large parts of that computation of this over and over again by introducing a special cache. This cache is called KV cache because store the key and value matricies for each token position.
 
-In the attention mechanism, we calculate attention relationships between all tokens in the sequence. The key insight is that at step $S+1$, we've already calculated the attention between all of the first $S$ tokens during the pre-fill phase. We can store these intermediate values in memory (the "cache") and only calculate new attention values involving the most recently generated token.
+In the attention mechanism, we calculate attention relationships between all tokens in the sequence. The key insight is that at step `S+1`, we've already calculated the attention between all of the first `S` tokens during the pre-fill phase. We can store these intermediate values in memory (the "cache") and only calculate new attention values involving the most recently generated token.
 
 This optimization works elegantly with matrix operations:
 
