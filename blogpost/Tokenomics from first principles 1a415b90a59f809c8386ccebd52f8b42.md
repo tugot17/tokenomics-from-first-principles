@@ -127,9 +127,9 @@ $$
 \text{Total parameters} =  128256 \times 8192 + 80 \times (12.75 \times 8192^2 + 2 \times 8192) + 8192 + 8192 \times 128256 =  70,553,706,496
 $$
 
-Each parameter is a floating-point number in a bfloat16 format—e.g., 0.22312, -4.3131. Storing each of these numbers takes 16 bits which is  2 bytes of memory. Given that we have a total of  `70,553,706,496` parameters to store, we will need `141,107,412,992` bytes or `141GB` just to store the model weights in GPU memory.
+Each parameter is a floating-point number in a bfloat16 format—e.g., 0.22312, -4.3131. Storing each of these numbers takes 16 bits which is 2 bytes of memory. Given that we have a total of  `70,553,706,496` parameters to store, we will need `141,107,412,992` bytes or `141GB` just to store the model weights in GPU memory.
 
-Note that 141GB is more memory than there is on the Nvidia A100 or H100. One of these GPUs comes with only 80GB of total memory (we refer to this memory as HBM, high bandwidth memory or global memory). Hence, for serving models, we usually use multiple cards for a single instance of a model. In practice, for more optimal model serving, we want to use more, 4 or even 8 such GPUs. Let’s now just take it at face value, and we will elaborate on why this is the case in the later part of this text.
+Note that 141GB is more memory than there is on the most common data center GPUs such as Nvidia A100 or H100. Each of these GPUs comes with only 80GB of total memory (we refer to this memory interchangeably as HBM, high bandwidth memory or global memory). Hence, for serving models, we usually use multiple cards for a single instance of a model. In practice, for more optimal model serving, we want to use more, 4 or even 8 such GPUs. Let’s now just take it at face value, and we will elaborate on why this is the case in the later part of this text.
 
 ## Compute and memory bound
 
@@ -153,8 +153,8 @@ For A100:
 
 For H100:
 
-- FLOPS: 9.89 * 10^14 floating point operations can be performed in a per second
-- Memory: 3.35 * 10^12 bytes can be loaded from global memory (HBM) per a second
+- FLOPS: $9.89 \times 10^14$ floating point operations can be performed in a per second
+- Memory: $3.35 \times 10^12$ bytes can be loaded from global memory (HBM) per a second
 
 As you'll see in the following LLM inference has both a phase that's heavily compute bound (very high arithmetic intensity) and a heavily memory bound (very low arithmetic intensity). The majority of the wall clock time is spent in the memory bound phase so the goal of efficient LLM inference is to maximize the utilization of the GPUs compute capacity during the memory bound phase. So increasing the arithmetic intensity for the memory bound phase represents a fundamental optimization target that directly translates to improved tokenomics.
 
@@ -1040,8 +1040,8 @@ As you might know, the pricing of various LLM providers is token-based: you will
 To summarize what we learned so far:
 
 - The time of pre-fill is quadratically dependent on the sequence length. As the prefill size grows, it will occupy an increasingly big percentage of the request processing time.
-- The time of decoding is dependent linearly, but this dependency is progressive, only kicking in at larger sequence lengths or batch sizes—when the KV cache becomes a substantial percentage of the total loaded data (alongside the model).
-- Since the cost of generating a single token is basically the cost of loading the model weights once from global memory, this cost should grow linearly with the number of generated tokens.
+- The time used for generating a single tokens grows linearly as loading the KV cache becomes a substantial percentage of the total loaded data for long sequences (alongside the model parameters).
+- Since the time of generating a single token is can be well approximated by cost of loading the model weights once from global memory, this time grows linearly with the number of generated tokens.
 
 What should be apparent from the description above is that estimating a FAIR price for the input tokens is a non-trivial task. Increased input quadratically increases the cost of prefill, but for standard use cases, prefill is only a minority of the time GPU spent on processing the request. Then, depending on the batch size and context length and the proportion of these two to the model size, it will affect the throughput.
 
