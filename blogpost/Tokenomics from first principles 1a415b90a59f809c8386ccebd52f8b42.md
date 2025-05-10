@@ -670,33 +670,33 @@ As a reminder, for each forward pass we need to load the entire model weights fr
 
 Initially the size of the KV cache will be negligible compared to the model size that we need to load, but as we increase the size of the processed prompt, it will occupy an increasingly big portion of the memory (see Fig. 11). Note that if we decide to process larger batches (we discuss this in detail in later section), the size of the KV cache will grow linearly w.r.t. batch size, as we need to cache the keys and values independently for all examples from the batch. Then at some point the size of the KV cache will overtake the size of the model itself.
 
-The intuition to develop here is that for small batches and short sequences, the sequence length has minimal impact on throughput because loading model weights dominates the memory bandwidth utilization. However, as either batch size or sequence length increases, loading the KV cache takes an amount of time to load for each token, eventually surpassing the memory footprint of the model weights themselves.
+The intuition to develop here is that for small batches and short sequences, the sequence length has minimal impact on throughput because loading model weights dominates the memory bandwidth utilization. However, as either batch size or sequence length increases, loading the KV cache takes an amount of time to load for each token, eventually surpassing the time consumed by loading of the model weights themselves.
 
-This transition creates two distinct performance regimes: in the model-dominated regime (short sequences/small batches), throughput remains relatively stable despite increasing sequence length. Once we enter the KV-cache-dominated regime, throughput begins to degrade in proportion to sequence length, approaching a near-linear relationship between sequence length and inference time.
+This transition creates two distinct performance regimes: in the so-called model-dominated regime (short sequences/small batches), throughput remains relatively stable despite increasing sequence length. Once we enter the KV-cache-dominated regime, generation speed begins to degrade in proportion to sequence length. The additional time loading the KV cache takes scales linearly w.r.t. sequence length.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%206.png)
 
 Fig. 11: KV cache scaling with the increasing sequence length. At 128k tokens for LLama 3.3 70B the KV cache for a single sentence will amount to 40GB.
 
-*In the naive implementations of the attention mechanism memory would also scale quadratically when we realize the `SxS` score matrix, but today everyone is using the [flash attention](https://github.com/Dao-AILab/flash-attention) which solves this by calculating `(Q @ Kᵗ) @ V` in an iterative way, where memory required is kept at `O(N)` .
+*In the naive implementations of the attention mechanism memory would also scale quadratically when we realize the `SxS` score matrix, but [flash attention](https://github.com/Dao-AILab/flash-attention) replaces these naive implementations. Flash attention is calculating `(Q @ Kᵗ) @ V` in an iterative way, where memory required is kept at `O(N)` .
 
 # Multi GPU inference
 
-As you might have noted, the 141 GB we need to store the Llama 3.3 70B parameters is more than what we have available on a single Nvidia H100 GPU. H100s come with 80GB of HBM memory. We would need a minimum of two to store the model in memory; however in practice we would like to probably use more. If we have more memory available we will be able to allocate higher proportion of it to KV cache and smaller proportion to the model weights allowing us to run larger batches. We would also linearly increase the available memory bandwidth, at the cost of an increased overhead in cross GPU communication though.
+As you might have noted, the 141 GB we need to store the Llama 3.3 70B parameters is more than what we have available on a single Nvidia H100 GPU. H100 cards come with 80GB of HBM memory. We would need a minimum of two to store the model in memory; however in practice we would like to probably use more for the KV cache. If we have more memory available we will be able to allocate higher proportion of it to KV cache and smaller proportion to the model weights allowing us to run larger batches. We would also linearly increase the available memory bandwidth, at the cost of an increased overhead in cross GPU communication though.
 
-Using just two GPUs for Llama 3.3 70B would result in only having a tiny amount of memory left for KV cache because the model weights already take up 88% (`141/160=88%`) of that memory, leaving only 19GB of memory (`160-141=19GB`) available for KV cache (in practice even less than that because we can't use 100% of GPU memory but are limited to around 95%). We wouldn’t be able to run large batches nor long sequence lengths, this would be very inefficient. We touch on this in later section, but being able to run larger batches is the key to enjoying the good inference economics.
+Using just two GPUs for Llama 3.3 70B would result in only having a tiny amount of memory available for KV cache because the model weights already take up 88% (`141/160=88%`) of that memory, leaving only 19GB of memory (`160-141=19GB`) available for KV cache (in practice even less than that because we can't use 100% of GPU memory but are limited to around 95%). We wouldn’t be able to run large batches nor long sequence lengths, this would be very inefficient. We touch on this in later section, but being able to run larger batches is the key to enjoying the good inference economics.
 
-Server GPUs almost always come in deployments of 4 or 8 GPUs per node, so using 3 GPUs would be wasteful because that would lead to one GPU being entirely unused in a lot of circumstances. Hence we jump from 2 to 4 GPUs for a singel model instance right away.
-Let’s assume then we will run the Llama 3.3 70B on 4 H100s. There are two main ways to run the large-scale AI models on multiple GPUs:
+GPU servers almost always come in deployments of 4 or 8 GPUs per node, so using 3 GPUs would be wasteful because that would lead to one GPU in the server being entirely unused in a lot of circumstances. Hence we jump from 2 to 4 GPUs for a single model instance right away.
+Let’s assume then we will run the Llama 3.3 70B on 4 H100s. There are two main ways to run large-scale AI models on multiple GPUs:
 
 - Pipeline parallel
 - Tensor parallel
 
-Both offer different tradeoffs between the throughput and latency. Let’s explore them briefly.
+Both offer different tradeoffs between throughput and latency. Let’s explore them briefly.
 
 ## Pipeline parallelism
 
-In the pipeline parallel (PP) setting, we split the model along the layers axis, meaning that each GPU will have a fraction of all layers in the model. E.g., in the case of LLama 3.3 with 80 hidden layers served on 4 GPUs, GPU:0 will host the first 20 layers, GPU:1 the next 20, and so on.
+In the pipeline parallel (PP) setting, we split the model along the layers axis, meaning that each GPU will have a fraction of all layers in the model. E.g., in the case of LLama 3.3 70B with 80 hidden layers served on 4 GPUs, GPU:0 will host the first 20 layers, GPU:1 the next 20, and so on.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%207.png)
 
@@ -704,19 +704,19 @@ Fig. 12: Pipeline parallelism with continuous batching visualization [https://do
 
 The upside of such an approach is the very limited communications between the devices. We only need to broadcast activations from one device to the next one 3 times for a single forward pass.
 
-We can also do continuous batching—GPU:0 processes batch 0 and is passing it to GPU:1, then batch 1 is coming in, and GPU:0 can process batch 1 while GPU:1 is processing batch 0, etc (see Fig. 12). This setting minimizes the communications between the devices, ensuring the maximum throughput; however, it comes at a price—at a single time spot, we only have access to 1/4 of the available compute and memory bandwidth, and we can only use a single GPU at a single point in time. If we are unable to attract large batches flowing continuously into our inference system, this will be a severe limitation of this approach.
+We can also do pipelining - GPU:0 processes batch 0 and is passing it to GPU:1, then batch 1 is coming in, and GPU:0 can process batch 1 while GPU:1 is processing batch 0, etc (see Fig. 12). This setting minimizes the stall time of each device, ensuring the maximum throughput; however, it comes at a price - at a single point in time, we only have access to 1/4 of the available compute and memory bandwidth per batch. So generation time is significantly slower than if we were to use all 4 GPUs at the same time.
 
-In practice, orchestrating efficient overlapping batching can be quite challenging; hence, for the remaining part of this text, we will focus on analyzing the tensor parallel setting.
+In practice, orchestrating efficient overlapping batching can be quite challenging; hence, for the remaining part of this text, we will focus on analyzing the far more common tensor parallel setting.
 
 ## Tensor parallelism
 
-The mainstream parallelism strategy, used by a vast majority of cloud providers, is tensor parallelism (TP). In TP, individual neural network layers are split across multiple GPUs, harnessing the combined compute power and memory bandwidth of all devices. This approach significantly accelerates per-layer processing but introduces important trade-offs that must be carefully considered.
+The mainstream parallelism strategy, used by a vast majority of LLM inference providers, is tensor parallelism (TP). In TP, individual neural network layers are split across multiple GPUs, harnessing the combined compute power and memory bandwidth of all devices. This approach significantly shortens per-layer inference time but introduces important trade-offs that must be carefully considered:
 
-1. **Communication Overhead**: In regular intervals, e.g., twice per layer as in transformer architecture, the execution must synchronize across GPUs, introducing a significant delay (in the order of milliseconds) per synchronization event. This overhead varies significantly based on interconnect technology (NVLink, PCIe, etc.) and network topology.
+1. **Communication Overhead**: In regular intervals, e.g., twice per transformer block, the execution must synchronize across GPUs, introducing a significant delay (in the order of milliseconds) per synchronization event. This overhead varies significantly based on interconnect technology (NVLink, PCIe, etc.) and network topology.
 
 2. **Sequential Batch Processing**: Unlike pipeline parallelism, TP requires all GPUs to process the same batch simultaneously. A new batch cannot begin until the current one completes, reducing throughput efficiency under dynamic workloads.
 
-The most efficient parallelization strategy is to have so called **column-wise** split linear layer (we split by the column dimension) followed by the **row-wise** layer (split across the row dimension). Such layout minimizes the synchronization to only one sync every two layers.
+The most efficient parallelization strategy is to have so called **column-wise** split linear layer (we split by the column dimension) followed by the **row-wise** layer (split across the row dimension). Such layout minimizes the synchronization to only one sync every two MLP layers.
 
 **Mathematical Intuition**:
 
