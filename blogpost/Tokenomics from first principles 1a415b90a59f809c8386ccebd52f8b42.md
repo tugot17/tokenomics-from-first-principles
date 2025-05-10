@@ -94,7 +94,8 @@ $$
 \text{2 $\times$ RMS norm} = 2 \times \text{hidden\_size} \text{ parameters}
 $$
 
-$*$ The $\text{w\_v}$ and $\text{w\_k}$  being $\frac{1}{8}th$ size of the $\text{w\_q}$ is something Llama architecture specific. This is due to the Llama team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a Llama architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
+
+\*The `w_v` and `w_k` being 1/8th size of the `w_q` is something Llama architecture specific. This is due to the Llama team using a technique called [Group Query Attention](https://arxiv.org/pdf/2305.13245) in which the model has fewer K and V heads than the total attention heads. You can verify this by looking at `num_key_value_heads` in the hyper parameters from the model config. The model `intermediate_size` being `3.5x` the hidden size is as well a Llama architecture-specific value. These were chosen by the llama team, and we take them at face value, also to simplify our calculations.
 
 Bringing us to a total of
 
