@@ -544,6 +544,10 @@ This demonstrates that in the pre-fill phase we are much more bound by the avail
 
 # Token by token/decode phase
 
+<!-- After we did the prefill with with first forward pass, we now use the model to generate one new token per item in the batch per forward pass. Then, we append this new token at the end of the sequence, and we proceed to generate the next token. As we showed above, this is quite computationally intensive (hundreds of TFLOPs). To optimize the subsequent token generation process, the ML community developed several techniques, most notably KV caching. -->
+
+<!-- This first forward pass for doing the prefill is computationally very expensive. The prefill gives us the attention relationships between all the tokens but as all but the last token stay the same we can just keep itSo we can eliminate doing large parts of that computation of this by introducing a cache. This cache is called KV cache because store the key and value matricies for each token. -->
+
 This first forward pass for doing the prefill is computationally very expensive. We can eliminate doing large parts of that computation of this over and over again by introducing a special cache. This cache is called KV cache because store the key and value matricies for each token position.
 
 In the attention mechanism, we calculate attention relationships between all tokens in the sequence. The key insight is that at step `S+1`, we've already calculated the attention between all of the first `S` tokens during the pre-fill phase. We can store these intermediate values in memory (the "cache") and only calculate new attention values involving the most recently generated token.
@@ -635,36 +639,38 @@ $$
 
 Fig. 9: How the memory footprint of KV cache increases with sequence length for Llama 3.3 70B. Note that the x-axis uses a logarithmic scale (powers of 2), which visually compresses the exponential growth. In reality, the memory usage is growing superlinearly with sequence length, not linearly as might be incorrectly inferred from the graph's appearance.
 
-While 617 MB may sound not that significant, this number scales linearly with the batch size (we elaborate on batches later) and with the sequence length (see Fig. 9). This is also the main reason why, at longer sequence lengths, the token-by-token generation is slower than at shorter sequence lengths—on top of the model weights, the KV cache also needs to be loaded from global memory, increasing processing time for each token produced.
+While 617 MB may sound not that significant, this number scales linearly with the batch size (we elaborate on batches later) and with the sequence length (see Fig. 9). This is also the main reason why, at longer sequence lengths, the token-by-token generation*  is slower than at shorter sequence lengths—on top of the model weights, the KV cache also needs to be loaded from global memory, increasing processing time for each token produced.
 
-Model weights, plus a KV cache, is roughly `141 + 0.6 ≈ 142GB`so it takes `142/3350 = 0.04s` to load it from the global memory. We calculated above that it only takes `0.00014s` to do all computations (assuming full compute utilization)—so it takes two orders of magnitude more time to load the model weights than to do the actual computations. This is what we mean by the token-by-token phase of using LLMs being memory bound. We are primarily limited by the speed of available memory, not by the speed of compute.
+Model weights, plus KV cache, is roughly `141 + 0.6 ≈ 142GB` so it takes `142/3350 = 0.04s` to load it from the global memory. We calculated above that it only takes `0.00014s` to do all computations (assuming 100% compute utilization) - so it takes two orders of magnitude more time to load the model weights than to do the actual computations. This is what we mean by the token-by-token phase of using LLMs being memory bound. We are primarily limited by the time memory transfer takes, not by the speed of compute.
 
-**This is one of the insights we hope you take out of reading this article—token-by-token is memory bound; the amount of available compute is of secondary importance, as we massively underutilize the compute resources anyway while waiting for weights to be loaded.**
+**This is one of the insights we hope you take out of reading this article - the token-by-token phase is memory bound; the amount of available compute throughput is of secondary importance, as we massively underutilize the compute resources anyway while waiting for weights to be loaded.**
+
+\* we use the terms token-by-token phase, decode phase and generation phase interchangeably
 
 # Scaling with the input length
 
-One of the main challenges in LLM serving is understanding how input prompt length affects end-to-end performance. Sequence length impacts both the prefill stage and the token-by-token decoding stage, though in fundamentally different ways.
+One of the main challenges in LLM serving is understanding how input prompt length affects end-to-end performance. Sequence length impacts both the prefill stage and the token-by-token decoding phase, though in fundamentally different ways.
 
 The prompt processing phase exhibits $O(N^2)$ computational complexity; as the sequence length grows, the processing time will grow quadratically*. We derived the FLOPs before as
 
-- `2 S² hidden_size`for `score matrix Q @ Kᵗ`
+- `2 S² hidden_size` for `score matrix Q @ Kᵗ`
 - `2 S² hidden_size` for `(Q @ Kᵗ) @ V`.
 
-This is especially relevant for longer sequence lengths, where the time to the first token will quadratically increase with the length of the document. You can experience this, e.g., when using the long-context Gemini that, as of March 2025, can take up to 2M tokens, but you can wait up to 2 minutes for the first token of the answer to appear. The intuition you should have developed here is that as the input length keeps increasing, a larger and larger percentage of the total time of processing a request will be spent in prompt processing - the compute-bound part (see Fig. 10).
+This is especially relevant for longer sequence lengths, where the time to the first token will quadratically increase with the length of the input sequence. You can experience this, e.g., when using the long-context Gemini that, as of May 2025, can take up to 2M tokens, but you can wait up to 2 minutes for the first token of the answer to be generated. The intuition you should have developed here is that as the input length keeps increasing, a larger and larger percentage of the total time of processing a request will be spent in prompt processing - the compute-bound part (see Fig. 10).
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%205.png)
 
-Fig. 10: As the prompt length increases, the compute required and hence the time increases quadratically, occupying an ever increasing portion of the total processing time of a request. This is just a visualization to give you some intuitions, it is not actually based on the real world observations.
+Fig. 10: As the prompt length increases, the compute required and hence the time increases quadratically, occupying an ever increasing portion of the total processing time of a request. Please note: this is just a visualization to give you some intuitions, it is not actually based on the real world observations.
 
 During the token-by-token phase, the relationship between the generation speed and the sequence length is less straightforward.
 
 FLOP-wise compute is scaling linearly; the new token needs to attend to all of the tokens from the past, or `2 S hidden_size` for `Q @ Kᵗ` and `2 S hidden_size` for `(Q @ Kᵗ) @ V`, but as we already know, FLOPs are not that relevant for the token-by-token case because we are primarily memory bound. What is much more relevant is the size of the data that we need to load from the global memory.
 
-As a reminder, for each forward pass we need to load the entire model weights from the global memory; on top of this, we will need to load the KV cache. As we showed in the section above, as we increase the cached sequence length, it will occupy linearly more and more memory or by factor `S` in `2 x bytes_per_param x num_hidden_layers x head_size x num_key_value_heads x S.`
+As a reminder, for each forward pass we need to load the entire model weights from the global memory; on top of this, we also need to load the KV cache from global memory. As we showed in the section above, as we increase the KV cached sequence length, it will occupy linearly more and more memory or by factor `S` in `2 x bytes_per_param x num_hidden_layers x head_size x num_key_value_heads x S.`
 
-Initially the size of the KV cache will be negligible compared to the model size that we need to load, but as we increase the size of the processed prompt, it will occupy an increasingly big portion of the memory (see Fig. 11). Note that if we decide to process larger batches (we discuss this in detail in later section), the size of the KV cache will grow linearly with the batch size, as we need to cache the keys and values independently for all examples from the batch. Then at some point the size of the KV cache will overtake the size of the model itself.
+Initially the size of the KV cache will be negligible compared to the model size that we need to load, but as we increase the size of the processed prompt, it will occupy an increasingly big portion of the memory (see Fig. 11). Note that if we decide to process larger batches (we discuss this in detail in later section), the size of the KV cache will grow linearly w.r.t. batch size, as we need to cache the keys and values independently for all examples from the batch. Then at some point the size of the KV cache will overtake the size of the model itself.
 
-The intuition to develop here is that for small batches and short sequences, the sequence length has minimal impact on throughput because loading model weights dominates the memory bandwidth utilization. However, as either batch size or sequence length increases, the KV cache consumes an increasingly more significant portion of memory bandwidth, eventually surpassing the memory footprint of the model weights themselves.
+The intuition to develop here is that for small batches and short sequences, the sequence length has minimal impact on throughput because loading model weights dominates the memory bandwidth utilization. However, as either batch size or sequence length increases, loading the KV cache takes an amount of time to load for each token, eventually surpassing the memory footprint of the model weights themselves.
 
 This transition creates two distinct performance regimes: in the model-dominated regime (short sequences/small batches), throughput remains relatively stable despite increasing sequence length. Once we enter the KV-cache-dominated regime, throughput begins to degrade in proportion to sequence length, approaching a near-linear relationship between sequence length and inference time.
 
@@ -1048,7 +1054,7 @@ To summarize what we learned so far:
 - The time spent generating a single tokens grows linearly as the context length grows. KV cache will gradually become a more and more substantial percentage of the total data loaded from the global memory (alongside the model parameters). 
 - Since the time of generating a single token is can be well approximated by cost of loading the model weights once from global memory, this time grows linearly with the number of generated tokens.
 
-What should be apparent from the description above is that estimating a FAIR price for the input tokens is a non-trivial task. Increased input quadratically increases the cost of prefill, but for standard use cases, prefill is only a minority of the time GPU spent on processing the request. Then, depending on the batch size and context length and the proportion of these two to the model size, it will affect the throughput.
+What should be apparent from the description above is that estimating a fair market price for the input tokens is a non-trivial task. Increased input quadratically increases the cost of prefill, but for standard use cases, prefill is only a minority of the time GPU spent on processing the request. Then, depending on the batch size and context length and the proportion of these two to the model size, it will affect the throughput.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%2014.png)
 
