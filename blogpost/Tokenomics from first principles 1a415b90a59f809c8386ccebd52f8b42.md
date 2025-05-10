@@ -2,7 +2,7 @@
 
 “Tokenomics” is a word at the intersection of tokens and economics, expressing the relationship between dollars and the primary unit of computation in large language models (LLMs)—tokens. We will explain where the cost of serving/hosting LLMs comes from, how many tokens can be produced by a GPU, and why this is the case. We will build a (simplified) world model of LLM inference arithmetics, based on the popular open-source model—LLama 3.3. The goal is to develop an accurate intuition regarding LLM inference.
 
-The topic of LLM inference economics has far-reaching implications beyond technical considerations. As AI capabilities rapidly advance, inference efficiency directly shapes both industry economics and accessibility. For AI labs, token production costs fundamentally determine profit margins (and also the cost of generating synthetic training data) - more efficient inference means higher returns on a fixed investment in hardware that can fuel further research and development cycles. For users, lower token costs democratize access to these powerful tools, potentially transforming AI from a premium resource into an everyday utility available for even routine tasks. Understanding these cost structures isn't merely academic - it provides insight into one of the key economic forces that will shape AI development in the coming years as we approach increasingly capable systems.
+The topic of LLM inference economics has far-reaching implications beyond technical considerations. As AI capabilities rapidly advance, inference efficiency directly shapes both industry economics and accessibility. For AI labs, token production costs fundamentally determine profit margins and the cost of generating synthetic training data —more efficient inference means higher returns on a fixed investment in hardware that can fuel further research and development cycles. For users, lower token costs democratize access to these powerful tools, potentially transforming AI from a premium resource into an everyday utility available for even routine tasks. Understanding these cost structures isn't merely academic—it provides insight into one of the key economic forces that will shape AI development in the coming years as we approach increasingly capable systems.
 
 The primary cost behind a generated token boils down to the cost of compute—you need to buy or rent a GPU. In both cases, there is a fixed cost associated with running a GPU per hour. Each GPU can produce a limited number of tokens in an hour. The number of tokens produced per hour divided by cost of hardware per hour will tell you the unit cost of generating a single token. This is how most of the LLM providers price their API offering, and this will be the model we will explore.
 
@@ -480,17 +480,19 @@ $$
 
 ## LM Head
 
+During the inference we only care about the next token prediction for the last token in our sequence. All of the other "next tokens" we already know as they are part of the input prompt. 
+
 #### Shapes:
-- Input: $\mathbf{X} \in \mathbb{R}^{S \times \text{hidden\_size}}$
+- Input: $\mathbf{X} \in \mathbb{R}^{1 \times \text{hidden\_size}}$
 - Weight: $\mathbf{W}_{\text{LM}} \in \mathbb{R}^{\text{hidden\_size} \times \text{vocab\_size}}$
-- Output: $\mathbf{Logits} \in \mathbb{R}^{S \times \text{vocab\_size}}$
+- Output: $\mathbf{Logits} \in \mathbb{R}^{1 \times \text{vocab\_size}}$
 
 #### FLOPS:
 
 $$
 \begin{aligned}
-\text{FLOPS}_{\text{LM Head}} &= 2 \times S \times \text{hidden\_size} \times \text{vocab\_size}\\
-&= 2S \times \text{hidden\_size} \times \text{vocab\_size}
+\text{FLOPS}_{\text{LM Head}} &= 2 \times 1 \times \text{hidden\_size} \times \text{vocab\_size}\\
+&= 2 \times \text{hidden\_size} \times \text{vocab\_size}
 \end{aligned}
 $$
 
@@ -508,12 +510,12 @@ Total FLOPs in the Llama model is a product of the number of FLOPs per transform
 $10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}$
 
 ### LM Head
-$2S \times \text{hidden\_size} \times \text{vocab\_size}$
+$2 \times \text{hidden\_size} \times \text{vocab\_size}$
 
 ### Total FLOPs Calculation
 
 #### Formula
-$\text{Total FLOPs} = \text{num\_hidden\_layers} \times (10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}) + 2S \times \text{hidden\_size} \times \text{vocab\_size}$
+$\text{Total FLOPs} = \text{num\_hidden\_layers} \times (10S \times \text{hidden\_size} + 25.5S \times \text{hidden\_size}^2 + 4S^2 \times \text{hidden\_size} + 5S^2 \times \text{num\_attention\_heads}) + 2 \times \text{hidden\_size} \times \text{vocab\_size}$
 
 #### Example: Llama 3.3 70B
 For Llama 3.3 70B with:
@@ -523,19 +525,21 @@ For Llama 3.3 70B with:
 - $\text{num\_hidden\_layers} = 80$
 - $S = 2048$ tokens
 
-$$\begin{align}
+$$
+\begin{align}
 \text{Total FLOPs} &= 80 \times (10 \times 2048 \times 8192 + 25.5 \times 2048 \times 8192^2 + 4 \times 2048^2 \times 8192 + 5 \times 2048^2 \times 64)\\
-&+ 2 \times 2048 \times 8192 \times 128256\\
-&= 2.9579 \times 10^{14}\\
-&= 296 \times 10^{12}\\
-&= 296 \text{ TFLOPs}
-\end{align}$$
+&+ 2 \times 8192 \times 128256\\
+&= 80 \times 3.6436 \times 10^{12} + 2.1013 \times 10^9\\
+&= 2.9149 \times 10^{14} + 2.1013 \times 10^9\\
+&\approx 2.9149 \times 10^{14}\\
+&= 291.49 \times 10^{12}\\
+&= 291.49 \text{ TFLOPs}
+\end{align}
+$$
 
 
-$296 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100s, it would theoretically take roughly $296/989 = 0.3s$ to process a prompt of 2048 tokens.
-
+$291 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100s, it would theoretically take roughly $291/989 = 0.29s$ to process a prompt of 2048 tokens.
 As a reminder, to load the model from global memory, we need to load $141\text{GB}$ worth of parameters. The memory bandwidth of a modern GPU is around $3350\text{GB/s}$, meaning that in theory it will take $141/3350 = 0.04s$ to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
-
 This demonstrates that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
 
 # Token by token/decode phase
@@ -600,11 +604,12 @@ KV caching reduces the total FLOPs by a factor of approximately S for all parts 
 
 - In self-attention, we only compute attention for the new token against all previous tokens
 - In the MLP and LM head components, we only process the new token
+- The LM head remains the same, but it is such a small fraction of the overall computations that we will skip it in our calculations.
 
 For example, with a 2048-token context:
 
-- During pre-fill: ~296 TFLOPs total
-- For generating token 2049: ~296/2048 ≈ 0.14 TFLOPs
+- During pre-fill: ~291 TFLOPs total
+- For generating token 2049: ~291/2048 ≈ 0.14 TFLOPs
 
 On an H100 GPU (989 TFLOP/s), this would take only:
 
