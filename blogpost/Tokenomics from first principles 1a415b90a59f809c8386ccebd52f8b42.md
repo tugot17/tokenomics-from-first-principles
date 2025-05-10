@@ -1045,7 +1045,7 @@ As you might know, the pricing of various LLM providers is token-based: you will
 To summarize what we learned so far:
 
 - The time of pre-fill is quadratically dependent on the sequence length. As the prefill size grows, it will occupy an increasingly big percentage of the request processing time.
-- The time used for generating a single tokens grows linearly as loading the KV cache becomes a substantial percentage of the total loaded data for long sequences (alongside the model parameters).
+- The time spent generating a single tokens grows linearly as the context length grows. KV cache will gradually become a more and more substantial percentage of the total data loaded from the global memory (alongside the model parameters). 
 - Since the time of generating a single token is can be well approximated by cost of loading the model weights once from global memory, this time grows linearly with the number of generated tokens.
 
 What should be apparent from the description above is that estimating a FAIR price for the input tokens is a non-trivial task. Increased input quadratically increases the cost of prefill, but for standard use cases, prefill is only a minority of the time GPU spent on processing the request. Then, depending on the batch size and context length and the proportion of these two to the model size, it will affect the throughput.
