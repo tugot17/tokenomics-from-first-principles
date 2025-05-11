@@ -539,8 +539,8 @@ $$
 \end{align}
 $$
 
-$291 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100 cards, it would theoretically take roughly $291/989 = 0.29s$ to process a prompt of 2048 tokens.
-As a reminder, to load the model from global memory, we need to load $141\text{GB}$ worth of parameters. The memory bandwidth of a modern GPU is around $3350\text{GB/s}$, meaning that in theory it will take $141/3350 = 0.04s$ to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
+`291 TFLOPs` is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100 cards, it would theoretically take roughly `291/989 = 0.29s` to process a prompt of 2048 tokens.
+As a reminder, to load the model from global memory, we need to load `141 GB` worth of parameters. The memory bandwidth of a modern GPU is around `3350 GB/s`, meaning that in theory it will take `141/3350 = 0.04s` to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
 This demonstrates that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
 
 # the decode phase
@@ -1062,8 +1062,8 @@ Fig. 24: Market prices for input and output tokens of Llama 3.3 70B [https://ope
 While estimating a universal proportion of cost between the input and output tokens that generalizes well across all possible shapes of input and output is quite complicated, estimating the cost for a specific input and output config is much simpler. We can just:
 
 - Measure the execution wall time.
-- Assume a fixed ratio $\gamma$ between input and output token costs (e.g., $\gamma=0.3$). There is no deep reasoning behind choosing this particular value of $\gamma$ we just need to choose some value.
-- Calculate the per-token cost $\beta$ by solving the following equation:
+- Assume a fixed ratio `γ` between input and output token costs (e.g., `γ=0.3`). There is no deep reasoning behind choosing this particular value of `γ` we just need to choose some value.
+- Calculate the per-token cost `β` by solving the following equation:
 
 $$
 \gamma \times \beta \times \text{input tokens} + \beta \times \text{output tokens} = time
@@ -1104,7 +1104,7 @@ Table 1: Estimated cost per 1M tokens for different batch sizes, assuming that t
 
 Obviously, the above is just a single data point from a single experiment for a single pair of input and output tokens. If we change the proportions of input and output tokens, the picture will be very different. To get a more realistic picture, we could, for example, run a Monte Carlo simulation- gathering multiple data points for different input and output configs, calculating the pricing for each example, removing the outliers (e.g., random slower executions due to external factors), and calculating the final price as an average of the median of these samples.
 
-The above strategy still suffers from making very strong assumptions, e.g., we only benchmark the performance of rectangularly shaped inputs-all elements of the batch have the same number of input tokens and the same number of output tokens. We don’t mix the prefill phase with the decode phase-we submit an entire batch at the same time, since all of its elements have the same shape; we expect the prefill to take more or less the same amount of time, after which we only do the decoding part. This is a very strong assumption that is not necessarily going to be the case in the real world. We also hardcoded the value of $\gamma$, which is not necessarily fair and optimal for the settings we will be serving.
+The above strategy still suffers from making very strong assumptions, e.g., we only benchmark the performance of rectangularly shaped inputs-all elements of the batch have the same number of input tokens and the same number of output tokens. We don’t mix the prefill phase with the decode phase-we submit an entire batch at the same time, since all of its elements have the same shape; we expect the prefill to take more or less the same amount of time, after which we only do the decoding part. This is a very strong assumption that is not necessarily going to be the case in the real world. We also hardcoded the value of `γ`, which is not necessarily fair and optimal for the settings we will be serving.
 
 We’ll pause our pricing model discussion here, and we hope to do a deep dive into more sophisticated pricing strategies in the future text. There are multiple pricing strategies one could use; another interesting angle is estimating the minimal number of users of the LLM model under which an inference is profitable.
 
