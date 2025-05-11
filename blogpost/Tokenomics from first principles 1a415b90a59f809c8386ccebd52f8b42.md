@@ -1,4 +1,4 @@
-# Tokenomics from first principles/ The economics of running AI/A guide to LLM inference economics
+# Tokenomics from first principles
 
 “Tokenomics” is a word at the intersection of tokens and economics, expressing the relationship between dollars and the primary unit of computation in large language models (LLMs)—tokens. We will explain where the cost of serving/hosting LLMs comes from, how many tokens can be produced by a GPU, and why this is the case. We will build a (simplified) world model of LLM inference arithmetics, based on the popular open-source model—LLama 3.3. The goal is to develop an accurate intuition regarding LLM inference.
 
@@ -156,7 +156,7 @@ For H100:
 - FLOPS: $9.89 \times 10^14$ floating point operations can be performed in a per second
 - Memory: $3.35 \times 10^12$ bytes can be loaded from global memory (HBM) per a second
 
-As you'll see in the following LLM inference has both a phase that's heavily compute bound (very high arithmetic intensity) and a heavily memory bound (very low arithmetic intensity). The majority of the wall clock time is spent in the memory bound phase so the goal of efficient LLM inference is to maximize the utilization of the GPUs compute capacity during the memory bound phase. So increasing the arithmetic intensity for the memory bound phase represents a fundamental optimization target that directly translates to improved tokenomics.
+As you'll see in the next parts of this text LLM inference has both a phase that's heavily compute bound (very high arithmetic intensity) and a heavily memory bound (very low arithmetic intensity). The majority of the wall clock time is spent in the memory bound phase so the goal of efficient LLM inference is to maximize the utilization of the GPUs compute capacity during the memory bound phase. So increasing the arithmetic intensity for the memory bound phase represents a fundamental optimization target that directly translates to improved tokenomics.
 
 In the context of LLMs, in order to generate a token, we need to load the entire model with all parameters from global memory (HBM) (we utilize the memory bandwidth) and calculate the intermediate activations (we use the compute). The ratio between compute and memory utilization is crucial in determining what can be optimized and how to enjoy better inference economics. In the next part we will go more in depth on the two phases of LLM inference:
 
@@ -1134,7 +1134,3 @@ Readers should also realize why running models "on device" will always be relati
 The above model is just a tip of the iceberg; we don't discuss any of the possible optimizations, such as speculation models, hardware-specific optimizations, or quantization techniques. The goal of this text is for you to build some basic intuitions on LLM inference. We hope you understand why there are two phases, why one is compute bound and the other one is memory bound, and why we hope you developed some intuitions about the relationship between the number of input and output tokens and the request processing time.
 
 To replicate the experiments find the instructions in: https://github.com/tugot17/tokenomics-from-first-principles
-
-## Acknowledgments
-
-Thanks @felixredpanda for bouncing out the underlaying ideas and reading it carefully and quickly
