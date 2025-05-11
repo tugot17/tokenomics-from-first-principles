@@ -144,7 +144,7 @@ These two factors dictate how quickly you can process computations; they affect 
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%201.png)
 
-Fig. 3: Compute and memory bandwidth A100s vs H100s [https://www.databricks.com/blog/coreweave-nvidia-h100-part-1](https://www.databricks.com/blog/coreweave-nvidia-h100-part-1)
+Fig. 3: Compute and memory bandwidth A100 cards vs H100 cards [https://www.databricks.com/blog/coreweave-nvidia-h100-part-1](https://www.databricks.com/blog/coreweave-nvidia-h100-part-1)
 
 A computer program (such as running an LLM) can be characterized by its arithmetic intensity. Arithmetic intensity is a concept that describes the ratio of computational operations, such as addition or multiplication (measured in FLOPs), to memory accesses (measured in bytes). A higher arithmetic intensity indicates that the program performs more computations per unit of data fetched from memory, which typically leads to better utilization of the processor's computational capabilities and reduced bottlenecking on memory bandwidth. LLM inference has a very low compute intensity because it involves repeatedly accessing large model weights from memory with relatively few computations per byte fetched. As you'll see in the following, LLM inference has both a phase that's heavily compute-bound (very high arithmetic intensity) and a heavily memory-bound (very low arithmetic intensity).
 
@@ -539,8 +539,7 @@ $$
 \end{align}
 $$
 
-
-$291 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100s, it would theoretically take roughly $291/989 = 0.29s$ to process a prompt of 2048 tokens.
+$291 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a modern GPU. For example, with H100 cards, it would theoretically take roughly $291/989 = 0.29s$ to process a prompt of 2048 tokens.
 As a reminder, to load the model from global memory, we need to load $141\text{GB}$ worth of parameters. The memory bandwidth of a modern GPU is around $3350\text{GB/s}$, meaning that in theory it will take $141/3350 = 0.04s$ to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
 This demonstrates that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
 
@@ -686,7 +685,7 @@ Using just two GPUs for Llama 3.3 70B would result in only having a tiny amount 
 
 GPU servers almost always come in deployments of 4 or 8 GPUs per node, so using 3 GPUs would be wasteful because that would lead to one GPU in the server being entirely unused in a lot of circumstances. Hence, we jump from 2 to 4 GPUs for a single model instance right away.
 
-Let’s assume then we will run the Llama 3.3 70B on 4 H100s. There are two main ways to run large-scale AI models on multiple GPUs:
+Let’s assume then we will run the Llama 3.3 70B on 4 H100 cards. There are two main ways to run large-scale AI models on multiple GPUs:
 
 - Pipeline parallel
 - Tensor parallel
@@ -1118,11 +1117,11 @@ We really hope this text to be a founding block for you to build an accurate wor
 We introduce the concept of the prefill phase and the token-by-token phase. We break down FLOPs during different parts of a forward pass, and we show how the prefill is primarily compute-bound. We then explain how different the token-by-token phase is. We introduce the concept of kv-cache; we go again through a forward pass and show how, thanks to the kv-caching, it is now far less dependent on compute (times `S` less FLOPs), hence how it becomes primarily memory bound. We show how, with the increasing input length, the KV cache occupies an increasingly big portion of the memory load time. We then briefly mention different parallelization strategies, and we describe how extra latency is added when running a multi-GPU setting.
 We follow this by introducing the concept of batching. We explain why, since we are primarily memory bound, we can radically improve the economics of our operation by running larger batches. This is the core message of this text and the intuition with which we hope you leave after reading it. We then build a simplified throughput model from first principles and compare its performance to a real-world Llama 3.3 70b run via vLLM. We show the difference between the theoretical performance and a real one, and we give a brief explanation of where the extra overhead is coming from. We show how inaccurate the theoretical model is, which we hope lets you build an intuition about the challenges of predicting real-world performance by a bunch of heuristics.
 
-Lastly, we discuss the challenges of establishing pricing and a fair pricing ratio between input and output tokens. We present a simplified tokenomics model that, while not fully accurate, enables you to build a simple heuristic to price the input and output tokens.
+Lastly, we discuss the challenges of establishing pricing and a fair pricing ratio between input and output tokens. We present a simplified cost model that, while not fully accurate, enables you to build a simple heuristic to price the input and output tokens.
 
-Readers should realize why running on more than the minimal number of GPUs is actually highly beneficial to the economics. While 141GB of model weights could theoretically fit on just two 80GB GPUs, doing so would consume 88% of available memory, leaving only 19GB for KV cache. This severely limits batch sizes and ultimately throughput. With additional GPUs, the same model weights occupy proportionally less of the total memory, allowing more space for KV cache and consequently supporting larger batch sizes. Since throughput scales nearly linearly with batch size, this directly translates to better economics. Each additional GPU also contributes its memory bandwidth to the system, further improving the token generation rate since we are memory-bound in the token-by-token phase.
+Readers should realize why running on more than the minimal number of GPUs is actually highly beneficial to the economics. More GPUs enable higher efficiency through btter caching that give a better unit cost per token. With additional GPUs, the same model weights occupy proportionally less of the total memory, allowing more space for KV cache and consequently supporting larger batch sizes. Since throughput scales nearly linearly with batch size, this directly translates to better economics. Each additional GPU also contributes its memory bandwidth to the system, further improving the token generation rate since we are memory-bound in the token-by-token phase.
 
-When evaluating hardware for LLM inference, readers should understand that memory size is not the only important factor - memory bandwidth is equally, if not more, critical. Since token-by-token generation is primarily memory-bound, they should always ask, "What is the memory speed?" as this determines how fast models can run. For example, NVIDIA L40S GPUs offer 48GB of memory but with a bandwidth of only 864GB/s (compared to 3350 in H100s), resulting in very slow inference. Similarly, the Apple Mac Studio with M3 Ultra has 512GB of unified memory but only 819 819GB/s of memory bandwidth (see Fig. 25), limiting its LLM inference capabilities despite the large memory pool.
+When evaluating hardware for LLM inference, readers should understand that memory size is not the only important factor - memory bandwidth is equally, if not more, critical. Since token-by-token generation is primarily memory-bound, they should always ask, "What is the memory speed?" as this determines how fast models can run. For example, NVIDIA L40S GPUs offer 48GB of memory but with a bandwidth of only 864 GB/s (compared to 3350 in H100 cards), resulting in very slow inference. Similarly, the Apple Mac Studio with M3 Ultra has 512GB of unified memory but only 819 819GB/s of memory bandwidth (see Fig. 25), limiting its LLM inference capabilities despite the large memory pool.
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%2015.png)
 
