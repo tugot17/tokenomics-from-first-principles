@@ -135,10 +135,12 @@ Note that 141GB is more memory than there is on the most common data center GPUs
 
 When looking at the specification of a GPU, you should be paying most attention to two metrics:
 
-- Compute: measured in FLOPS-how many floating-point operations (addition and multiplication) a GPU can do in a second.
+- Compute: measured in FLOPS - how many floating-point operations (addition and multiplication) a GPU can do in a second *
 - Memory bandwidth: how many bytes can be loaded from the global memory in a second.
 
 These two factors dictate how quickly you can process computations; they affect the speed of a single feedforward operation and determine the generation speed (measured in tokens per second, tps) and ultimately define your cost per token.
+
+\* Please be aware that FLOPS and FLOPs mean different things. **FLOPs** (small s) is the plural of floating-point operations not considering time at all but **FLOPS** (captital S) means floating-point operations that happen within a second
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%201.png)
 
@@ -542,7 +544,7 @@ $291 \text{ TFLOPs}$ is roughly the order of magnitude of FLOPs available in a m
 As a reminder, to load the model from global memory, we need to load $141\text{GB}$ worth of parameters. The memory bandwidth of a modern GPU is around $3350\text{GB/s}$, meaning that in theory it will take $141/3350 = 0.04s$ to load the entire model from global memory - roughly 7x faster than the time needed for all of the computations.
 This demonstrates that in the pre-fill phase we are much more bound by the available compute than by the memory bandwidth. This is a desirable situation, as we want to utilize all of the existing compute resources.
 
-# Token by token/decode phase
+# the decode phase
 
 This first forward pass for doing the prefill is computationally very expensive. We can eliminate doing large parts of that computation over and over again by introducing a special cache. This cache is called KV cache because it stores the key and value matrices for each token position.
 
@@ -814,9 +816,9 @@ Fig. 15: KV cache scaling - comparison between different batch sizes. Note how t
 
 After all of the theoretical introductions, let’s try to combine all that we learned so far to estimate the LLM throughput. We will:
 
-- Develop a simplified throughput model based on the GPU specification.
-- Compare it with a real-world throughput of Llama 3.3 70B on 4 H100 cards.
-- Explain the discrepancies between theoretical and actual performance.
+- Develop a theoretical performance model based on the GPU spec sheet
+- Compare it with a real-world throughput of Llama 3.3 70B on 4 H100 cards
+- Explain the discrepancies between theoretical and actual performance
 
 The time to produce a response to a prompt is a combination of the pre-fill time and the decode time times the number of decode tokens. The more output tokens we produce, the smaller share of time will be spent in the prefill phase. The prefill time is primarily compute-bound, and the time for token-by-token is primarily memory-bound.
 
@@ -884,7 +886,7 @@ While the total throughput is increasing with the batch size, the per-request sp
 
 Fig. 17: Throughput variance throughout the day from OpenRouter. The variance can be somehow explained by the varying demand for the service throughout the day, resulting in varying batch sizes.
 
-It is also (part of the) reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economy of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy (pipeline parallelism offers less cross-device communications overhead), that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
+It is also part of the reason why the [batch API](https://platform.openai.com/docs/guides/batch) is so much cheaper. In cases where speed is not of utmost importance, an LLM provider can just run massive batches, enjoying economy of scale, with individual requests being handled pretty slowly but processed at a higher profit. There are more nuances to this, e.g., the parallelism strategy (pipeline parallelism offers less cross-device communications overhead), that we consider beyond the scope of this text. We just wanted to give you a real-world example of the real impact of batch size on the price of a generated token.
 
 Now let’s compare the results we get from our model to the actual LLM inference performance. For this, we run a vLLM inference server (a popular LLM serving framework) with Llama 3.3 70B on 4 H100 cards connected with NVLink. The result is quite underwhelming.
 
@@ -1111,7 +1113,7 @@ Luckily for us, at the end of the day, you can easily verify if you are running 
 
 # Summary
 
-We really hope this text to be a founding block for you to build an accurate world model of LLM inference economics, using Llama 3.3 70B as an example. We start explaining what parameters are present in an LLM, what it means for a model to have 70B parameters, and how the memory is consumed. Then we give you a brief introduction to compute/memory bandwidth and what it means to be compute- or memory-bound, and we explain the concept of FLOP and how many FLOPs are in a matrix multiplication.
+We really hope this text to be a founding block for you to build an accurate world model of LLM inference economics, using Llama 3.3 70B as an example. We start explaining what parameters are present in an LLM, what it means for a model to have 70B parameters, and how the memory is consumed. Then we give you a brief introduction to compute- and memory bandwidth performance and what it means to be compute- or memory-bound, and we explain the concept of FLOP and how many FLOPs are in a matrix multiplication.
 
 We introduce the concept of the prefill phase and the token-by-token phase. We break down FLOPs during different parts of a forward pass, and we show how the prefill is primarily compute-bound. We then explain how different the token-by-token phase is. We introduce the concept of kv-cache; we go again through a forward pass and show how, thanks to the kv-caching, it is now far less dependent on compute (times `S` less FLOPs), hence how it becomes primarily memory bound. We show how, with the increasing input length, the KV cache occupies an increasingly big portion of the memory load time. We then briefly mention different parallelization strategies, and we describe how extra latency is added when running a multi-GPU setting.
 We follow this by introducing the concept of batching. We explain why, since we are primarily memory bound, we can radically improve the economics of our operation by running larger batches. This is the core message of this text and the intuition with which we hope you leave after reading it. We then build a simplified throughput model from first principles and compare its performance to a real-world Llama 3.3 70b run via vLLM. We show the difference between the theoretical performance and a real one, and we give a brief explanation of where the extra overhead is coming from. We show how inaccurate the theoretical model is, which we hope lets you build an intuition about the challenges of predicting real-world performance by a bunch of heuristics.
