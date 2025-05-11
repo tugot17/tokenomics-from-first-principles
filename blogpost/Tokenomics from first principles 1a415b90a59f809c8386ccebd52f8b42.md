@@ -18,7 +18,7 @@ A so-called decoder-only transformer model, like Llama, usually consists of the 
 - multiple transformer layers, each layer containing some parameters for the self-attention part and some for the MLP part.
 - lanugage modeling (LM) head-the final layer
 
-We assume the reader has a basic understanding of these concepts; hence, we will not be providing the deep intuitions behind them. If you are unfamiliar with the transformer architecture, stop here and read [one](https://jalammar.github.io/illustrated-transformer/) [of](https://www.youtube.com/watch?v=kCc8FmEb1nY&t) [these](https://youtu.be/wjZofJX0v4M) amazing tutorials.
+We assume the reader has a basic understanding of these concepts; hence, we will not be providing the deep intuitions behind them. If you are unfamiliar with the transformer architecture, stop here and check out [one](https://jalammar.github.io/illustrated-transformer/) [of](https://www.youtube.com/watch?v=kCc8FmEb1nY&t) [these](https://youtu.be/wjZofJX0v4M) amazing tutorials.
 
 ```jsx
 {
