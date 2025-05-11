@@ -632,14 +632,14 @@ $$
 For Llama 3.3 70B with 2048 tokens using BF16 precision, this amounts to:
 
 $$
-kv \ cache = 2 \times 2 \times 80 \times 128 \times 8 \times 2048 = 671\text{ MB}
+kv \ cache = 2 \times 2 \times 80 \times 128 \times 8 \times 2048 = 640\text{ MB}
 $$
 
 ![image.png](Tokenomics%20from%20first%20principles%201a415b90a59f809c8386ccebd52f8b42/image%204.png)
 
 Fig. 9: How the memory footprint of KV cache increases with sequence length for Llama 3.3 70B. Note that the x-axis uses a logarithmic scale (powers of 2), which visually compresses the exponential growth. In reality, the memory usage is growing superlinearly with sequence length, not linearly as might be incorrectly inferred from the graph's appearance.
 
-While 617 MB may sound not that significant, this number scales linearly with the batch size (we elaborate on batches later) and with the sequence length (see Fig. 9). This is also the main reason why, at longer sequence lengths, the token-by-token generation*  is slower than at shorter sequence lengths—on top of the model weights, the KV cache also needs to be loaded from global memory, increasing processing time for each token produced.
+While 640 MB may sound not that significant, this number scales linearly with the batch size (we elaborate on batches later) and with the sequence length (see Fig. 9). This is also the main reason why, at longer sequence lengths, the token-by-token generation*  is slower than at shorter sequence lengths—on top of the model weights, the KV cache also needs to be loaded from global memory, increasing processing time for each token produced.
 
 Model weights, plus KV cache, is roughly `141 + 0.6 ≈ 142GB` so it takes `142/3350 = 0.04s` to load it from the global memory. We calculated above that it only takes `0.00014s` to do all computations (assuming 100% compute utilization) - so it takes two orders of magnitude more time to load the model weights than to do the actual computations. This is what we mean by the token-by-token phase of using LLMs being memory bound. We are primarily limited by the time memory transfer takes, not by the speed of compute.
 
@@ -805,7 +805,7 @@ Increasing the batch size increases the compute usage linearly - we have `k` tim
 
 **This is the core message of this post and the main intuition we hope you take away from reading this:** as we grow the batch size, we can effectively share the time to load the model from high bandwidth memory (HBM), aka our cost of loading the model is split across an increasing number of clients, enjoying the **economies of scale** and decreasing the per-request cost. **Having sufficient demand and continuously serving big batches is the key to running a profitable LLM inference business; if you can't support large batches, your cost per token will balloon, making your operation unprofitable*.** (greetings to the Groq team)
 
-*One thing to note is that there is a limit to this model. As we approach really long sequences or really big batches, as we will see in our experiments, the memory footprint of the KV cache starts to slowly overtake the memory footprint of the model itself (see Fig. 15). When this happens, the cost of loading the model will become increasingly irrelevant to the total time of loading data from the global memory.
+\*One thing to note is that there is a limit to this model. As we approach really long sequences or really big batches, as we will see in our experiments, the memory footprint of the KV cache starts to slowly overtake the memory footprint of the model itself (see Fig. 15). When this happens, the cost of loading the model will become increasingly irrelevant to the total time of loading data from the global memory.
 
 "Luckily" for us, this situation also has its limit—the memory limit of a GPU node; in the case of H100 cards, it will be 8 × H100 = 8 × 80GB = 640GB. Note how for a batch of 8 at the full context length of Llama we are already nearly there.
 
